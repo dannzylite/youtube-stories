@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import * as geminiService from '../services/geminiService';
 import type { StoryVersion } from '../types';
 import { Icon } from './Icon';
 
@@ -15,20 +16,68 @@ interface StoryEditorProps {
     isStoryComplete: boolean;
 }
 
+function writeString(view: DataView, offset: number, string: string) {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+}
+
+function createWavBlob(pcmData: Uint8Array): Blob {
+    const sampleRate = 24000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const dataSize = pcmData.length;
+    const blockAlign = (numChannels * bitsPerSample) / 8;
+    const byteRate = sampleRate * blockAlign;
+
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    // RIFF chunk descriptor
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataSize, true);
+    writeString(view, 8, 'WAVE');
+
+    // FMT sub-chunk
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // Subchunk1Size for PCM
+    view.setUint16(20, 1, true); // AudioFormat (PCM=1)
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+
+    // data sub-chunk
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataSize, true);
+
+    // Write PCM data
+    // Fix: DataView does not have a 'set' method for arrays. Use a Uint8Array view of the buffer to set the PCM data.
+    new Uint8Array(buffer).set(pcmData, 44);
+
+    return new Blob([view], { type: 'audio/wav' });
+}
+
+
 export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, story, thumbnailUrl, transcript, onSaveVersion, onEdit, onContinue, isGenerating, isStoryComplete }) => {
     const [currentStory, setCurrentStory] = useState(story);
     const [history, setHistory] = useState<string[]>([story]);
     const [historyIndex, setHistoryIndex] = useState(0);
     const [versions, setVersions] = useState<StoryVersion[]>([]);
     const [notification, setNotification] = useState('');
+    const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
+    const [speechGenerationProgress, setSpeechGenerationProgress] = useState('');
     
     useEffect(() => {
         setCurrentStory(story);
     }, [story]);
 
     useEffect(() => {
-        const timeout = setTimeout(() => setNotification(''), 3000);
-        return () => clearTimeout(timeout);
+        if (notification) {
+            const timeout = setTimeout(() => setNotification(''), 3000);
+            return () => clearTimeout(timeout);
+        }
     }, [notification]);
 
     const handleStoryChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -66,6 +115,41 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
         const lastFragment = currentStory.slice(-500); // Get last 500 chars for context
         const continuePrompt = `Please continue from where the story left off, using this last fragment for context: "${lastFragment}". This is the second and final part. Write a satisfying conclusion to the entire narrative.`;
         onContinue(continuePrompt, currentStory);
+    };
+
+    const handleTextToSpeech = async () => {
+        setIsGeneratingSpeech(true);
+        setSpeechGenerationProgress('');
+        setNotification('Starting audio generation...');
+        try {
+            const onProgress = (current: number, total: number) => {
+                const progressText = `Generating audio... (${current}/${total})`;
+                setSpeechGenerationProgress(progressText);
+                setNotification(progressText);
+            };
+
+            const pcmData = await geminiService.generateSpeechFromLongText(currentStory, onProgress);
+
+            const wavBlob = createWavBlob(pcmData);
+            const url = URL.createObjectURL(wavBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            const timestamp = new Date().toISOString().replace(/:/g, '-');
+            a.download = `story_audio_${timestamp}.wav`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            setNotification('Audio downloaded successfully!');
+
+        } catch (error) {
+            console.error("Failed to generate speech", error);
+            setNotification('Failed to generate audio. Please try again.');
+        } finally {
+            setIsGeneratingSpeech(false);
+            setSpeechGenerationProgress('');
+        }
     };
 
     const downloadFile = (filename: string, content: string, type: string) => {
@@ -140,7 +224,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
                     value={currentStory}
                     onChange={handleStoryChange}
                     rows={20}
-                    className="w-full bg-gray-900/80 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
+                    className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
                 />
             </div>
             
@@ -157,6 +241,14 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
                     >
                         {isGenerating ? <Icon name="loader" className="animate-spin h-4 w-4"/> : <Icon name="logo" className="h-4 w-4" />}
                         {isGenerating ? 'Generating...' : isStoryComplete ? 'Story Complete' : 'Continue Generating'}
+                    </button>
+                    <button 
+                        onClick={handleTextToSpeech} 
+                        disabled={isGeneratingSpeech || !currentStory.trim()}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isGeneratingSpeech ? <Icon name="loader" className="animate-spin h-4 w-4"/> : <Icon name="tts" className="h-4 w-4" />}
+                        <span>{speechGenerationProgress || (isGeneratingSpeech ? 'Generating...' : 'Generate Audio')}</span>
                     </button>
                 </div>
                 <div className="flex items-center space-x-3">

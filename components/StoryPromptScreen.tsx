@@ -8,7 +8,7 @@ interface StoryPromptScreenProps {
     isLoading: boolean;
 }
 
-const defaultPrompt = `You are a master storyteller. Using the provided title and background, write the first part of the full story (approximately 30,000 characters).
+const defaultPrompt = `You are a master storyteller. Using the provided title and background, write the first part of the full story (approximately 9,000 words).
 
 Your writing should be engaging, establish the main characters and setting clearly, and build narrative tension. End this first part at a natural break or a point of suspense that makes the reader eager to find out what happens next.
 
@@ -48,7 +48,7 @@ export const StoryPromptScreen: React.FC<StoryPromptScreenProps> = ({ approvedTi
                     <textarea
                         id="story-prompt"
                         rows={8}
-                        className="w-full bg-gray-900/80 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
+                        className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
                         placeholder="e.g., Describe the setting in more detail, focus on the character's internal conflict..."
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}

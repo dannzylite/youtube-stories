@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import { IngestForm } from './components/IngestForm';
 import { TitleGenerationScreen } from './components/TitleGenerationScreen';
@@ -77,7 +78,6 @@ function App() {
         } catch (err) {
             console.error(err);
             setError('Failed to generate background suggestions. Please try again.');
-            setAppState(appState); 
         } finally {
             setLoading({});
         }
@@ -170,6 +170,7 @@ function App() {
                 return <BackgroundPromptScreen
                             approvedTitle={appState.approvedTitle}
                             onGenerateBackgrounds={handleBackgroundsGenerate}
+                            isLoading={!!loading.suggestions}
                         />;
             
             case 'suggestions':

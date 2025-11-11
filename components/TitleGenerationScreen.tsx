@@ -55,7 +55,7 @@ export const TitleGenerationScreen: React.FC<TitleGenerationScreenProps> = ({ an
                      <textarea
                         id="title-prompt"
                         rows={3}
-                        className="w-full bg-gray-900/80 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
+                        className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
                         placeholder="e.g., Make it mysterious, focus on the conflict, target a younger audience..."
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}

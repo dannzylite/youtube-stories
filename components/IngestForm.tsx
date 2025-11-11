@@ -81,7 +81,7 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
                 <input
                     id="title"
                     type="text"
-                    className="w-full bg-gray-900/80 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
+                    className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
                     placeholder="Enter the original title here..."
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
@@ -96,7 +96,7 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
                 <textarea
                     id="transcript"
                     rows={15}
-                    className="w-full bg-gray-900/80 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
+                    className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
                     placeholder="Paste the story transcript here..."
                     value={transcript}
                     onChange={handleTranscriptChange}

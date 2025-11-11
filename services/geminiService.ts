@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, Modality } from "@google/genai";
 import type { AnalysisData, TitleSuggestion, BackgroundSuggestion } from '../types';
 
 if (!process.env.API_KEY) {
@@ -6,7 +6,6 @@ if (!process.env.API_KEY) {
     console.error("API_KEY environment variable is not set");
 }
 
-// Fix: Initialize GoogleGenAI with a named apiKey parameter
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 async function fileToGenerativePart(file: File) {
@@ -47,7 +46,6 @@ export async function analyzeTranscript(transcript: string, title: string, image
 
     const imagePart = imageFile ? await fileToGenerativePart(imageFile) : null;
     
-    // Conditionally construct the parts array to avoid type issues.
     const parts = [];
     if (imagePart) parts.push(imagePart);
     parts.push(textPart);
@@ -174,7 +172,7 @@ export async function generateBackgroundSuggestions(analysis: AnalysisData, tran
 export async function generateStoryPart(title: string, background: string, transcript: string, userPrompt: string, existingStory: string, generationNumber: number): Promise<{ storyPart: string, isComplete: boolean }> {
     const model = 'gemini-2.5-pro';
     
-    let promptContext = `You are a master storyteller. Your task is to write a compelling story based on the provided materials.
+    let promptContext = `You are a master storyteller. Your task is to write a compelling story based on the provided materials. Faithfully adhere to the title, background, and user's creative direction.
 
     Title: ${title}
     Background / Synopsis: ${background}
@@ -202,9 +200,9 @@ export async function generateStoryPart(title: string, background: string, trans
     let finalUserPrompt = userPrompt;
 
     if (generationNumber === 1) {
-        finalUserPrompt += `\n\nIMPORTANT INSTRUCTION: Write the first part of the story, approximately 30,000 characters long. End on a compelling cliffhanger to set up the second part. This is part 1 of 2.`;
+        finalUserPrompt += `\n\nIMPORTANT INSTRUCTION: Write the first part of the story, approximately 9,000 words long. End on a compelling cliffhanger to set up the second part. This is part 1 of 2.`;
     } else { // This will be generation 2
-        finalUserPrompt += `\n\nIMPORTANT INSTRUCTION: This is the second and FINAL part of the story. Write a satisfying conclusion. Generate approximately 30,000-35,000 more characters, but the total final story length MUST NOT exceed 70,000 characters under any circumstances. Conclude the entire narrative in this part.`;
+        finalUserPrompt += `\n\nIMPORTANT INSTRUCTION: This is the second and FINAL part of the story. Write a satisfying conclusion. Generate approximately 9,000 more words, but the total final story length MUST NOT exceed 19,000 words under any circumstances. Conclude the entire narrative in this part.`;
     }
 
 
@@ -223,4 +221,85 @@ export async function generateStoryPart(title: string, background: string, trans
     const isComplete = generationNumber >= 2;
 
     return { storyPart: storyPartText.trim(), isComplete };
+}
+
+async function generateSpeech(text: string): Promise<Uint8Array> {
+    const model = "gemini-2.5-flash-preview-tts";
+    
+    const response = await ai.models.generateContent({
+        model,
+        contents: [{ parts: [{ text }] }],
+        config: {
+            responseModalities: [Modality.AUDIO],
+            speechConfig: {
+                voiceConfig: {
+                    prebuiltVoiceConfig: { voiceName: 'Kore' },
+                },
+            },
+        },
+    });
+    
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+    if (!base64Audio) {
+        throw new Error("Could not generate audio from text.");
+    }
+
+    const decodedAudio = atob(base64Audio);
+    const len = decodedAudio.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = decodedAudio.charCodeAt(i);
+    }
+    return bytes;
+}
+
+export async function generateSpeechFromLongText(
+    text: string, 
+    onProgress: (progress: number, total: number) => void
+): Promise<Uint8Array> {
+    const CHUNK_SIZE = 20000; // Safe character limit per chunk
+    
+    const chunks: string[] = [];
+    let remainingText = text;
+    while (remainingText.length > 0) {
+        if (remainingText.length <= CHUNK_SIZE) {
+            chunks.push(remainingText);
+            break;
+        }
+
+        let chunk = remainingText.substring(0, CHUNK_SIZE);
+        let lastPeriod = chunk.lastIndexOf('.');
+        let lastNewline = chunk.lastIndexOf('\n');
+        
+        let splitIndex = Math.max(lastPeriod, lastNewline);
+        if (splitIndex === -1) {
+            splitIndex = CHUNK_SIZE;
+        } else {
+            splitIndex += 1;
+        }
+        
+        chunks.push(remainingText.substring(0, splitIndex));
+        remainingText = remainingText.substring(splitIndex);
+    }
+    
+    const audioChunks: Uint8Array[] = [];
+    const totalChunks = chunks.length;
+
+    for (let i = 0; i < totalChunks; i++) {
+        onProgress(i + 1, totalChunks);
+        const audioData = await generateSpeech(chunks[i]);
+        audioChunks.push(audioData);
+    }
+
+    const totalLength = audioChunks.reduce((acc, val) => acc + val.length, 0);
+    const concatenatedAudio = new Uint8Array(totalLength);
+
+    let offset = 0;
+    for (const chunk of audioChunks) {
+        concatenatedAudio.set(chunk, offset);
+        offset += chunk.length;
+    }
+
+    return concatenatedAudio;
 }

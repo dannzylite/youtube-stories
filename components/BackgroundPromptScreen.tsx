@@ -4,9 +4,10 @@ import { Icon } from './Icon';
 interface BackgroundPromptScreenProps {
     approvedTitle: string;
     onGenerateBackgrounds: (prompt: string) => void;
+    isLoading: boolean;
 }
 
-export const BackgroundPromptScreen: React.FC<BackgroundPromptScreenProps> = ({ approvedTitle, onGenerateBackgrounds }) => {
+export const BackgroundPromptScreen: React.FC<BackgroundPromptScreenProps> = ({ approvedTitle, onGenerateBackgrounds, isLoading }) => {
     const [prompt, setPrompt] = useState('Start with a moment of quiet reflection before the main action begins.');
     
     const handleSubmit = (e: React.FormEvent) => {
@@ -34,7 +35,7 @@ export const BackgroundPromptScreen: React.FC<BackgroundPromptScreenProps> = ({ 
                     <textarea
                         id="background-prompt"
                         rows={4}
-                        className="w-full bg-gray-900/80 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
+                        className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
                         placeholder="e.g., Describe the setting in more detail, focus on the character's internal conflict..."
                         value={prompt}
                         onChange={(e) => setPrompt(e.target.value)}
@@ -43,11 +44,11 @@ export const BackgroundPromptScreen: React.FC<BackgroundPromptScreenProps> = ({ 
                     <div className="flex justify-end pt-4">
                         <button
                             type="submit"
-                            disabled={!prompt.trim()}
+                            disabled={!prompt.trim() || isLoading}
                             className="inline-flex items-center gap-3 px-6 py-3 text-base font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                            <Icon name="logo" className="h-5 w-5" />
-                            <span>Generate Backgrounds</span>
+                            {isLoading ? <Icon name="loader" className="animate-spin h-5 w-5"/> : <Icon name="logo" className="h-5 w-5" />}
+                            <span>{isLoading ? 'Generating...' : 'Generate Backgrounds'}</span>
                         </button>
                     </div>
                 </form>
