@@ -15,6 +15,7 @@ export const TitleGenerationScreen: React.FC<TitleGenerationScreenProps> = ({ an
     const [prompt, setPrompt] = useState('Make it more engaging for a casual audience.');
     const [suggestions, setSuggestions] = useState<TitleSuggestion[]>([]);
     const [selectedTitle, setSelectedTitle] = useState<string | null>(null);
+    const [customTitle, setCustomTitle] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -41,13 +42,50 @@ export const TitleGenerationScreen: React.FC<TitleGenerationScreenProps> = ({ an
             setIsLoading(false);
         }
     };
+    
+    const handleCustomTitleSubmit = () => {
+        if (!customTitle.trim()) return;
+        onTitleApproved(customTitle.trim(), ingestData, analysis);
+    };
 
     return (
         <div className="space-y-8">
             <AnalysisPreview analysis={analysis} />
             
+             <div className="space-y-4 bg-gray-900/50 p-6 rounded-lg border border-gray-700">
+                <h3 className="text-xl font-bold text-white">Use Your Own Title</h3>
+                <p className="text-sm text-gray-400">If you already have a title in mind, enter it here.</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                        type="text"
+                        value={customTitle}
+                        onChange={(e) => setCustomTitle(e.target.value)}
+                        placeholder="Enter your title..."
+                        className="flex-grow bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
+                    />
+                    <button
+                        onClick={handleCustomTitleSubmit}
+                        disabled={!customTitle.trim()}
+                        className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        <Icon name="check" className="h-5 w-5" />
+                        <span>Use This Title & Continue</span>
+                    </button>
+                </div>
+            </div>
+
+            <div className="relative">
+                <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                    <div className="w-full border-t border-gray-700" />
+                </div>
+                <div className="relative flex justify-center">
+                    <span className="bg-gray-900 px-3 text-base font-medium text-gray-400">OR</span>
+                </div>
+            </div>
+
+
             <div className="space-y-6 bg-gray-900/50 p-6 rounded-lg border border-gray-700">
-                 <h3 className="text-xl font-bold text-white">Generate Title Suggestions</h3>
+                 <h3 className="text-xl font-bold text-white">Generate New Title Suggestions</h3>
                  <form onSubmit={handleGenerate} className="space-y-4">
                      <label htmlFor="title-prompt" className="block text-sm font-medium text-gray-300">
                          Your Creative Direction
@@ -98,7 +136,7 @@ export const TitleGenerationScreen: React.FC<TitleGenerationScreenProps> = ({ an
                         className="inline-flex items-center gap-3 px-6 py-3 text-base font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <Icon name="check" className="h-5 w-5" />
-                        <span>Approve & Continue to Backgrounds</span>
+                        <span>Approve Selected Title & Continue</span>
                     </button>
                 </div>
             )}

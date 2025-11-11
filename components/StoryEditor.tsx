@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import type { StoryVersion } from '../types';
@@ -14,7 +15,16 @@ interface StoryEditorProps {
     onContinue: (prompt: string, existingStory: string) => void;
     isGenerating: boolean;
     isStoryComplete: boolean;
+    onProceedToAssets: () => void;
 }
+
+const NARRATOR_VOICES = [
+    { id: 'Charon', name: 'Deep Narrator' },
+    { id: 'Fenrir', name: 'Gravelly Storyteller' },
+    { id: 'Puck', name: 'Authoritative Voice' },
+    { id: 'Zephyr', name: 'Calm Chronicler' },
+    { id: 'Kore', name: 'Eloquent Orator' },
+];
 
 function writeString(view: DataView, offset: number, string: string) {
     for (let i = 0; i < string.length; i++) {
@@ -53,14 +63,13 @@ function createWavBlob(pcmData: Uint8Array): Blob {
     view.setUint32(40, dataSize, true);
 
     // Write PCM data
-    // Fix: DataView does not have a 'set' method for arrays. Use a Uint8Array view of the buffer to set the PCM data.
     new Uint8Array(buffer).set(pcmData, 44);
 
     return new Blob([view], { type: 'audio/wav' });
 }
 
 
-export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, story, thumbnailUrl, transcript, onSaveVersion, onEdit, onContinue, isGenerating, isStoryComplete }) => {
+export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, story, thumbnailUrl, transcript, onSaveVersion, onEdit, onContinue, isGenerating, isStoryComplete, onProceedToAssets }) => {
     const [currentStory, setCurrentStory] = useState(story);
     const [history, setHistory] = useState<string[]>([story]);
     const [historyIndex, setHistoryIndex] = useState(0);
@@ -68,6 +77,8 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
     const [notification, setNotification] = useState('');
     const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
     const [speechGenerationProgress, setSpeechGenerationProgress] = useState('');
+    const [selectedVoice, setSelectedVoice] = useState('Charon');
+    const [isPreviewing, setIsPreviewing] = useState<boolean>(false);
     
     useEffect(() => {
         setCurrentStory(story);
@@ -116,6 +127,48 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
         const continuePrompt = `Please continue from where the story left off, using this last fragment for context: "${lastFragment}". This is the second and final part. Write a satisfying conclusion to the entire narrative.`;
         onContinue(continuePrompt, currentStory);
     };
+    
+    const playPcmAudio = async (pcmData: Uint8Array) => {
+        try {
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
+            const frameCount = pcmData.length / 2; // Each sample is 2 bytes (16-bit)
+            const audioBuffer = audioContext.createBuffer(1, frameCount, 24000);
+            const channelData = audioBuffer.getChannelData(0);
+            
+            const pcm16 = new Int16Array(pcmData.buffer);
+            for (let i = 0; i < frameCount; i++) {
+                channelData[i] = pcm16[i] / 32768.0;
+            }
+            
+            const source = audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+            source.connect(audioContext.destination);
+            source.start();
+
+            source.onended = () => {
+                audioContext.close().catch(console.error);
+            };
+        } catch (error) {
+            console.error("Failed to play audio:", error);
+            setNotification("Could not play audio preview.");
+        }
+    };
+
+    const handlePreviewVoice = async (voiceId: string) => {
+        setIsPreviewing(true);
+        const voiceName = NARRATOR_VOICES.find(v => v.id === voiceId)?.name || 'the selected voice';
+        setNotification(`Previewing ${voiceName}...`);
+        try {
+            const pcmData = await geminiService.generateSpeechPreview(voiceId);
+            await playPcmAudio(pcmData);
+        } catch (error) {
+            console.error("Failed to generate voice preview", error);
+            setNotification('Failed to generate preview. Please try again.');
+        } finally {
+            setIsPreviewing(false);
+            setNotification('');
+        }
+    };
 
     const handleTextToSpeech = async () => {
         setIsGeneratingSpeech(true);
@@ -128,7 +181,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
                 setNotification(progressText);
             };
 
-            const pcmData = await geminiService.generateSpeechFromLongText(currentStory, onProgress);
+            const pcmData = await geminiService.generateSpeechFromLongText(currentStory, selectedVoice, onProgress);
 
             const wavBlob = createWavBlob(pcmData);
             const url = URL.createObjectURL(wavBlob);
@@ -228,34 +281,81 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
                 />
             </div>
             
-             <div className="pt-8 border-t border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-4">
-                <div className="flex items-center space-x-3">
-                    <button onClick={handleSave} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
-                        <Icon name="save" className="h-4 w-4"/>
-                        Save Version
-                    </button>
-                     <button 
-                        onClick={handleContinue} 
-                        disabled={isGenerating || isStoryComplete}
-                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isGenerating ? <Icon name="loader" className="animate-spin h-4 w-4"/> : <Icon name="logo" className="h-4 w-4" />}
-                        {isGenerating ? 'Generating...' : isStoryComplete ? 'Story Complete' : 'Continue Generating'}
-                    </button>
-                    <button 
-                        onClick={handleTextToSpeech} 
-                        disabled={isGeneratingSpeech || !currentStory.trim()}
-                        className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isGeneratingSpeech ? <Icon name="loader" className="animate-spin h-4 w-4"/> : <Icon name="tts" className="h-4 w-4" />}
-                        <span>{speechGenerationProgress || (isGeneratingSpeech ? 'Generating...' : 'Generate Audio')}</span>
-                    </button>
+            <div className="pt-8 border-t border-gray-700 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button onClick={handleSave} className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700">
+                            <Icon name="save" className="h-4 w-4"/>
+                            Save Version
+                        </button>
+                        {!isStoryComplete ? (
+                             <button 
+                                onClick={handleContinue} 
+                                disabled={isGenerating || isStoryComplete}
+                                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isGenerating ? <Icon name="loader" className="animate-spin h-4 w-4"/> : <Icon name="logo" className="h-4 w-4" />}
+                                {isGenerating ? 'Generating...' : 'Continue Generating'}
+                            </button>
+                        ) : (
+                             <button 
+                                onClick={onProceedToAssets}
+                                className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-red-600 hover:bg-red-700"
+                            >
+                                <Icon name="youtube" className="h-5 w-5"/>
+                                <span>Generate YouTube Assets</span>
+                            </button>
+                        )}
+                    </div>
+                     <div className="flex items-center space-x-3">
+                        <span className="text-sm font-medium text-gray-300">Export as:</span>
+                        <button onClick={() => handleExport('json')} className="px-3 py-1 text-sm bg-gray-700 rounded-md hover:bg-gray-600">JSON</button>
+                        <button onClick={() => handleExport('md')} className="px-3 py-1 text-sm bg-gray-700 rounded-md hover:bg-gray-600">MD</button>
+                        <button onClick={() => handleExport('csv')} className="px-3 py-1 text-sm bg-gray-700 rounded-md hover:bg-gray-600">CSV</button>
+                    </div>
                 </div>
-                <div className="flex items-center space-x-3">
-                    <span className="text-sm font-medium text-gray-300">Export as:</span>
-                    <button onClick={() => handleExport('json')} className="px-3 py-1 text-sm bg-gray-700 rounded-md hover:bg-gray-600">JSON</button>
-                    <button onClick={() => handleExport('md')} className="px-3 py-1 text-sm bg-gray-700 rounded-md hover:bg-gray-600">MD</button>
-                    <button onClick={() => handleExport('csv')} className="px-3 py-1 text-sm bg-gray-700 rounded-md hover:bg-gray-600">CSV</button>
+
+                <div className="space-y-4 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
+                    <h4 className="text-base font-semibold text-white">Audio Generation</h4>
+                    <div className="flex flex-col gap-4">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <label htmlFor="voice-select" className="text-sm font-medium text-gray-300">Voice:</label>
+                                <select
+                                    id="voice-select"
+                                    value={selectedVoice}
+                                    onChange={(e) => setSelectedVoice(e.target.value)}
+                                    disabled={isGeneratingSpeech || isPreviewing}
+                                    className="bg-gray-700 border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 text-sm text-white px-3 py-2 disabled:opacity-50"
+                                    aria-label="Select narrator voice"
+                                >
+                                    {NARRATOR_VOICES.map(voice => (
+                                        <option key={voice.id} value={voice.id}>{voice.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => handlePreviewVoice(selectedVoice)}
+                                disabled={isGeneratingSpeech || isPreviewing}
+                                className="p-2.5 text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Preview Voice"
+                            >
+                                {isPreviewing ? 
+                                    <Icon name="loader" className="animate-spin h-4 w-4"/> : 
+                                    <Icon name="play" className="h-4 w-4" />
+                                }
+                            </button>
+                        </div>
+                         <button 
+                            onClick={handleTextToSpeech} 
+                            disabled={isGeneratingSpeech || isPreviewing || !currentStory.trim()}
+                            className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isGeneratingSpeech ? <Icon name="loader" className="animate-spin h-4 w-4"/> : <Icon name="tts" className="h-4 w-4" />}
+                            <span>{speechGenerationProgress || (isGeneratingSpeech ? 'Generating...' : 'Generate Audio')}</span>
+                        </button>
+                    </div>
                 </div>
             </div>
             

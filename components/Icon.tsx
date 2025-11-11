@@ -5,8 +5,7 @@ interface IconProps extends React.SVGProps<SVGSVGElement> {
 }
 
 export const Icon: React.FC<IconProps> = ({ name, ...props }) => {
-  // Fix: Changed JSX.Element to React.ReactElement to resolve "Cannot find namespace 'JSX'" error.
-  const icons: Record<string, React.ReactElement> = {
+  const icons: Record<string, React.ReactNode> = {
     logo: <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.898 20.624l-.219.823.219.823a1.875 1.875 0 001.382 1.382l.823.219-.823.219a1.875 1.875 0 00-1.382 1.382l-.219.823.219.823a1.875 1.875 0 001.382-1.382l.823-.219-.823-.219a1.875 1.875 0 00-1.382-1.382z" />,
     restart: <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.878 0M2.985 19.644A8.25 8.25 0 0115.03 3.97m0 0a8.25 8.25 0 01-12.045 0" />,
     loader: <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0011.878 0M2.985 19.644A8.25 8.25 0 0115.03 3.97m0 0a8.25 8.25 0 01-12.045 0" />,
@@ -23,10 +22,20 @@ export const Icon: React.FC<IconProps> = ({ name, ...props }) => {
     redo: <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3" />,
     save: <path strokeLinecap="round" strokeLinejoin="round" d="M9 3.75H6.168c-1.121 0-2.146.46-2.907 1.218C2.5 5.724 2 6.748 2 7.832V20.25c0 1.083.5 2.108 1.26 2.868.76.76 1.784 1.22 2.908 1.22h11.664c1.124 0 2.148-.46 2.908-1.22.76-.76 1.262-1.785 1.262-2.868V11.25c0-1.083-.5-2.108-1.262-2.868-.76-.76-1.784-1.22-2.908-1.22H15V3.75m-6 0h6m-6 0v6m6-6v6m-6-6h.008v.008H9V3.75z" />,
     tts: <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />,
+    play: <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653l14.25 6.347-14.25 6.347V5.653z" />,
+    youtube: <path d="M10,15L15.5,12L10,9V15M21.5,12C21.5,16.42 19.92,20.42 16.96,22.96C14,25.5 9.81,26.7 5.81,25.81C1.81,24.92 0,21.69 0,18V6C0,2.31 1.81,-0.92 5.81,-0.19C9.81,0.53 14,1.72 16.96,4.25C19.92,6.75 21.5,10.75 21.5,12Z"></path>,
+    settings: <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-1.003 1.11-1.226M12 20.25a8.25 8.25 0 100-16.5 8.25 8.25 0 000 16.5zM12 12.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" />,
+    'youtube-connect': <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v7.5A2.25 2.25 0 005.25 18h13.5A2.25 2.25 0 0021 15.75v-7.5A2.25 2.25 0 0018.75 6H13.5m-3 4.5v-1.5m-3 1.5v-1.5m12 0v-1.5" />,
+    upload: <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />,
   };
 
+  const svgProps = name === 'youtube' ? 
+    { ...props, fill:"currentColor", viewBox:"0 0 24 24", strokeWidth: 0, stroke: "none" } :
+    { ...props, fill:"none", viewBox:"0 0 24 24", strokeWidth:1.5, stroke:"currentColor" };
+
+
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}>
+    <svg xmlns="http://www.w3.org/2000/svg" {...svgProps}>
       {icons[name]}
     </svg>
   );

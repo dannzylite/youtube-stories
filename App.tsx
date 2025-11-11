@@ -1,5 +1,4 @@
-
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { IngestForm } from './components/IngestForm';
 import { TitleGenerationScreen } from './components/TitleGenerationScreen';
 import { BackgroundPromptScreen } from './components/BackgroundPromptScreen';
@@ -7,27 +6,63 @@ import { RewriteSuggestions } from './components/RewriteSuggestions';
 import { ApprovalModal } from './components/ApprovalModal';
 import { StoryEditor } from './components/StoryEditor';
 import { StoryPromptScreen } from './components/StoryPromptScreen';
+import { YouTubeAssetsScreen } from './components/YouTubeAssetsScreen';
+import { SettingsScreen } from './components/SettingsScreen';
 import { Icon } from './components/Icon';
 import * as geminiService from './services/geminiService';
+import * as youtubeService from './services/youtubeService';
 import type { 
     IngestData, 
     AnalysisData,
-    BackgroundSuggestion
+    BackgroundSuggestion,
+    YouTubeAuthState,
 } from './types';
 
-type AppState =
+type EditorState = { screen: 'editor'; ingestData: IngestData; title: string; background: string; story: string; isStoryComplete: boolean; generationCount: number };
+type BaseAppState =
     | { screen: 'ingest' }
     | { screen: 'titleGeneration'; ingestData: IngestData; analysis: AnalysisData }
     | { screen: 'backgroundPrompt'; ingestData: IngestData; analysis: AnalysisData; approvedTitle: string }
     | { screen: 'suggestions'; ingestData: IngestData; approvedTitle: string; backgroundSuggestions: BackgroundSuggestion[] }
     | { screen: 'storyPrompt'; ingestData: IngestData; approvedTitle: string; approvedBackground: string }
-    | { screen: 'editor'; ingestData: IngestData; title: string; background: string; story: string; isStoryComplete: boolean; generationCount: number };
+    | EditorState
+    | { screen: 'youtubeAssets'; previousEditorState: EditorState };
+
+type AppState = BaseAppState | { screen: 'settings'; previousState: BaseAppState };
 
 
 function App() {
     const [appState, setAppState] = useState<AppState>({ screen: 'ingest' });
     const [loading, setLoading] = useState<{ analysis?: boolean, suggestions?: boolean, story?: boolean }>({});
     const [error, setError] = useState<string | null>(null);
+    const [youtubeAuthState, setYoutubeAuthState] = useState<YouTubeAuthState>({ state: 'loading' });
+    const [isAppInitialized, setIsAppInitialized] = useState(false);
+
+    useEffect(() => {
+        const initializeApp = async () => {
+            const apiKey = (window as any)._env_?.API_KEY;
+
+            if (!apiKey || apiKey.includes('YOUR_GEMINI_API_KEY_HERE')) {
+                setError("FATAL: Gemini API Key is missing. Please replace 'YOUR_GEMINI_API_KEY_HERE' in index.html with your actual key.");
+                setIsAppInitialized(true); // Stop loading, show error
+                return;
+            }
+
+            try {
+                // Initialize all services that need the API key
+                geminiService.init(apiKey);
+                await youtubeService.init(setYoutubeAuthState, apiKey);
+                setIsAppInitialized(true);
+            } catch (err) {
+                console.error("Initialization failed:", err);
+                const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during initialization.';
+                setError(errorMessage);
+                setIsAppInitialized(true); // Stop loading, show error
+            }
+        };
+        
+        initializeApp();
+    }, []);
 
     // Suggestions state
     const [selectedBackground, setSelectedBackground] = useState<string | null>(null);
@@ -135,6 +170,14 @@ function App() {
         }
     }, [appState]);
 
+    const handleProceedToAssets = useCallback(() => {
+        if (appState.screen !== 'editor') return;
+        setAppState({
+            screen: 'youtubeAssets',
+            previousEditorState: appState,
+        });
+    }, [appState]);
+
     const handleSaveVersion = (data: { title: string, background: string, story: string }) => {
         console.log('Version saved:', data);
     };
@@ -153,8 +196,30 @@ function App() {
              handleAnalysisStart(appState.ingestData).finally(() => setLoading({}));
         }
     };
+
+    const openSettings = () => {
+        if (appState.screen === 'settings') return;
+        setAppState({
+            screen: 'settings',
+            previousState: appState
+        });
+    };
     
     const renderContent = () => {
+        if (!isAppInitialized) {
+            return (
+               <div className="text-center py-10">
+                   <Icon name="loader" className="animate-spin h-8 w-8 text-indigo-400 mx-auto" />
+                   <p className="mt-4 text-lg text-gray-400">Initializing services...</p>
+               </div>
+           );
+       }
+
+       if (appState.screen === 'ingest' && error) {
+           // If we are on the ingest screen but an init error occurred, don't show the form.
+           return null;
+       }
+       
         switch (appState.screen) {
             case 'ingest':
                 return <IngestForm onAnalysisStart={handleAnalysisStart} isLoading={!!loading.analysis} />;
@@ -206,6 +271,25 @@ function App() {
                         onContinue={handleGenerateStoryPart}
                         isGenerating={!!loading.story}
                         isStoryComplete={appState.isStoryComplete}
+                        onProceedToAssets={handleProceedToAssets}
+                    />
+                );
+            case 'youtubeAssets':
+                 return (
+                    <YouTubeAssetsScreen
+                        title={appState.previousEditorState.title}
+                        story={appState.previousEditorState.story}
+                        onBackToEditor={() => setAppState(appState.previousEditorState)}
+                        youtubeAuthState={youtubeAuthState}
+                    />
+                );
+            case 'settings':
+                return (
+                    <SettingsScreen
+                        youtubeAuthState={youtubeAuthState}
+                        onSignIn={youtubeService.signIn}
+                        onSignOut={youtubeService.signOut}
+                        onClose={() => setAppState(appState.previousState)}
                     />
                 );
             default:
@@ -221,12 +305,17 @@ function App() {
                         <Icon name="logo" className="h-8 w-8 text-indigo-500" />
                         <h1 className="text-2xl font-bold text-white tracking-tight">Storyteller AI</h1>
                     </div>
-                    {appState.screen !== 'ingest' && (
-                        <button onClick={handleRestart} className="text-sm font-medium text-gray-400 hover:text-white flex items-center gap-2">
-                             <Icon name="restart" className="h-4 w-4" />
-                            <span>Start Over</span>
+                    <div className="flex items-center gap-4">
+                        {appState.screen !== 'ingest' && (
+                            <button onClick={handleRestart} className="text-sm font-medium text-gray-400 hover:text-white flex items-center gap-2">
+                                 <Icon name="restart" className="h-4 w-4" />
+                                <span>Start Over</span>
+                            </button>
+                        )}
+                        <button onClick={openSettings} className="text-gray-400 hover:text-white" aria-label="Settings">
+                            <Icon name="settings" className="h-6 w-6" />
                         </button>
-                    )}
+                    </div>
                 </div>
             </header>
             <main className="py-10">

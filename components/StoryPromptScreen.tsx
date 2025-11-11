@@ -8,7 +8,7 @@ interface StoryPromptScreenProps {
     isLoading: boolean;
 }
 
-const defaultPrompt = `You are a master storyteller. Using the provided title and background, write the first part of the full story (approximately 9,000 words).
+const defaultPrompt = `You are a master storyteller. Using the provided title and background, write the first part of the full story.
 
 Your writing should be engaging, establish the main characters and setting clearly, and build narrative tension. End this first part at a natural break or a point of suspense that makes the reader eager to find out what happens next.
 

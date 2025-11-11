@@ -1,9 +1,10 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- A valid Google Client ID is now included. No action is needed here. -->
+    <meta name="google-signin-client_id" content="940566292787-nvjn40t6nbqof00mnn2csk2qntb0v4us.apps.googleusercontent.com">
     <title>Creator Rewrite Studio</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -25,6 +26,14 @@
 </head>
 <body class="bg-gray-900 text-gray-100">
     <div id="root"></div>
+    <script>
+      // This is the ONLY configuration step you need to perform.
+      // 1. Get your Gemini API key from Google AI Studio.
+      // 2. Replace 'YOUR_GEMINI_API_KEY_HERE' with your actual key.
+      window._env_ = {
+        API_KEY: 'AIzaSyCTUYjYVtbAODpYii0J3-rg_oPB66LxCZo'
+      };
+    </script>
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>
