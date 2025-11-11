@@ -9,7 +9,11 @@ import { StoryPromptScreen } from './components/StoryPromptScreen';
 import { YouTubeAssetsScreen } from './components/YouTubeAssetsScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { Icon } from './components/Icon';
-import * as geminiService from './services/geminiService';
+// Use the backend-proxied Gemini service for content generation.
+// The proxied service forwards requests to the backend so the client
+// doesn't need to hold the Gemini API key. Speech/thumbnail helpers
+// that require client-side modalities are re-exported from the proxy.
+import * as geminiService from './services/geminiServiceProxy';
 import * as youtubeService from './services/youtubeService';
 import type { 
     IngestData, 
@@ -40,18 +44,13 @@ function App() {
 
     useEffect(() => {
         const initializeApp = async () => {
-            const apiKey = (window as any)._env_?.API_KEY;
-
-            if (!apiKey || apiKey.includes('YOUR_GEMINI_API_KEY_HERE')) {
-                setError("FATAL: Gemini API Key is missing. Please replace 'YOUR_GEMINI_API_KEY_HERE' in index.html with your actual key.");
-                setIsAppInitialized(true); // Stop loading, show error
-                return;
-            }
-
             try {
-                // Initialize all services that need the API key
-                geminiService.init(apiKey);
-                await youtubeService.init(setYoutubeAuthState, apiKey);
+                // Note: Gemini API calls now go through the backend proxy
+                // No need to initialize geminiService with API key anymore
+
+                // YouTube service still needs initialization for OAuth
+                // The backend handles the YouTube Data API key
+                await youtubeService.init(setYoutubeAuthState);
                 setIsAppInitialized(true);
             } catch (err) {
                 console.error("Initialization failed:", err);
@@ -60,7 +59,7 @@ function App() {
                 setIsAppInitialized(true); // Stop loading, show error
             }
         };
-        
+
         initializeApp();
     }, []);
 

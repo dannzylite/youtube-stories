@@ -4,7 +4,10 @@ import type { YouTubeAuthState } from '../types';
 // --- CONFIGURATION ---
 // The Client ID is now read directly from the <meta> tag in index.html.
 
-const DISCOVERY_DOCS = ["https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest"];
+const DISCOVERY_DOCS = [
+    "https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest",
+    "https://www.googleapis.com/discovery/v1/apis/oauth2/v2/rest"
+];
 // This scope allows the app to upload videos and manage the user's YouTube account.
 const SCOPES = 'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
 const LOCAL_STORAGE_TOKEN_KEY = 'youtube_token';
@@ -36,8 +39,9 @@ function loadScript(src: string, id: string): Promise<void> {
 
 /**
  * Initializes the Google API client and Google Identity Services sequentially and robustly.
+ * Note: The YouTube API key is now handled by the backend server.
  */
-export async function init(updateCallback: (newState: YouTubeAuthState) => void, apiKey: string) {
+export async function init(updateCallback: (newState: YouTubeAuthState) => void) {
     updateStateCallback = updateCallback;
 
     const clientIdMeta = document.querySelector('meta[name="google-signin-client_id"]');
@@ -49,13 +53,6 @@ export async function init(updateCallback: (newState: YouTubeAuthState) => void,
             state: 'disconnected',
             error: "YouTube integration requires a Google Cloud Client ID. It appears to be missing from index.html."
         });
-        return;
-    }
-    
-    if (!apiKey || apiKey.includes('YOUR_GEMINI_API_KEY_HERE')) {
-        const errorMsg = 'API Key is missing or is a placeholder. Please add your actual key in the inline script of index.html to enable YouTube integration.';
-        console.error(errorMsg);
-        updateStateCallback({ state: 'disconnected', error: errorMsg });
         return;
     }
 
@@ -70,17 +67,17 @@ export async function init(updateCallback: (newState: YouTubeAuthState) => void,
         google = window.google;
 
         // Step 2: Load the GAPI client and initialize it. This is an async, callback-based operation that we promisify.
+        // Note: We only need discoveryDocs for OAuth, API key is handled by backend
         await new Promise<void>((resolve, reject) => {
             gapi.load('client', async () => {
                 try {
                     await gapi.client.init({
-                        apiKey: apiKey,
                         discoveryDocs: DISCOVERY_DOCS,
                     });
                     resolve();
                 } catch (error) {
                     console.error('GAPI client.init error:', error);
-                    
+
                     let specificMessage = 'An unknown error occurred during initialization.';
                     if (error && typeof error === 'object') {
                         // The gapi error object might be at the top level or nested
@@ -98,10 +95,7 @@ export async function init(updateCallback: (newState: YouTubeAuthState) => void,
                         specificMessage = String(error);
                     }
 
-                    const detailedError = `GAPI client init failed for YouTube.\n${specificMessage}\n\nPlease check the following in your Google Cloud project:
-1. The "YouTube Data API v3" is enabled for your project.
-2. Your API Key is valid and correctly provided.
-3. If the key has restrictions, ensure they allow this app's domain. For local testing, it's often easiest to temporarily remove all restrictions.`;
+                    const detailedError = `GAPI client init failed for YouTube.\n${specificMessage}\n\nPlease check your Google Cloud project settings.`;
                     reject(new Error(detailedError));
                 }
             });
@@ -226,22 +220,45 @@ interface UploadDetails {
  * Uploads a video to YouTube using a resumable upload process.
  */
 export async function uploadVideo(details: UploadDetails, onProgress: (progress: number) => void): Promise<void> {
+    if (!gapi || !gapi.client) {
+        throw new Error("YouTube API not initialized. Please refresh the page and try again.");
+    }
+
     const accessToken = gapi.client.getToken()?.access_token;
     if (!accessToken) {
-        throw new Error("User not authenticated. Please sign in first.");
+        throw new Error("User not authenticated. Please sign in to YouTube first.");
+    }
+
+    // Validate and sanitize the title
+    let sanitizedTitle = details.title?.trim() || '';
+    if (!sanitizedTitle) {
+        throw new Error("Video title cannot be empty.");
+    }
+    // YouTube title max length is 100 characters
+    if (sanitizedTitle.length > 100) {
+        sanitizedTitle = sanitizedTitle.substring(0, 97) + '...';
+    }
+
+    // Validate and sanitize description
+    let sanitizedDescription = details.description?.trim() || '';
+    // YouTube description max length is 5000 characters
+    if (sanitizedDescription.length > 5000) {
+        sanitizedDescription = sanitizedDescription.substring(0, 4997) + '...';
     }
 
     // --- Step 1: Initiate Resumable Upload for Video ---
     const videoMetadata = {
         snippet: {
-            title: details.title,
-            description: details.description,
-            tags: details.tags,
+            title: sanitizedTitle,
+            description: sanitizedDescription,
+            tags: details.tags || [],
         },
         status: {
             privacyStatus: 'private', // Upload as private, user can change later
         },
     };
+
+    console.log('Uploading video with metadata:', videoMetadata);
 
     const videoUploadResponse = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
         method: 'POST',
@@ -253,7 +270,10 @@ export async function uploadVideo(details: UploadDetails, onProgress: (progress:
     });
 
     if (!videoUploadResponse.ok) {
-        throw new Error(`Failed to initiate video upload: ${await videoUploadResponse.text()}`);
+        const errorText = await videoUploadResponse.text();
+        console.error('YouTube upload initiation failed:', errorText);
+        console.error('Attempted metadata:', videoMetadata);
+        throw new Error(`Failed to initiate video upload: ${errorText}`);
     }
 
     const locationUrl = videoUploadResponse.headers.get('Location');
@@ -273,8 +293,16 @@ export async function uploadVideo(details: UploadDetails, onProgress: (progress:
 
     // --- Step 3: Upload Thumbnail ---
     onProgress(96);
-    await uploadThumbnail(videoId, details.thumbnailFile, accessToken);
+    const thumbnailError = await uploadThumbnail(videoId, details.thumbnailFile, accessToken);
     onProgress(100);
+
+    // If thumbnail failed, throw a special error that includes the video ID
+    if (thumbnailError) {
+        const error: any = new Error(thumbnailError);
+        error.videoId = videoId;
+        error.partialSuccess = true;
+        throw error;
+    }
 }
 
 
@@ -319,19 +347,38 @@ function uploadFile(locationUrl: string, file: File, onProgress: (progress: numb
 
 /**
  * Helper to set the custom thumbnail for a video.
+ * Returns an error message if thumbnail upload fails, or null if successful.
  */
-async function uploadThumbnail(videoId: string, thumbnailFile: Blob, accessToken: string) {
-    const response = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/octet-stream',
-        },
-        body: thumbnailFile,
-    });
+async function uploadThumbnail(videoId: string, thumbnailFile: Blob, accessToken: string): Promise<string | null> {
+    try {
+        const response = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/octet-stream',
+            },
+            body: thumbnailFile,
+        });
 
-    if (!response.ok) {
-        console.error(`Failed to set thumbnail: ${await response.text()}`);
-        // This is not a fatal error, the video is already uploaded.
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.warn(`Failed to set thumbnail:`, errorText);
+
+            try {
+                const errorData = JSON.parse(errorText);
+                if (errorData.error?.code === 403) {
+                    return "Note: Custom thumbnail could not be set. Your YouTube account needs to be verified to upload custom thumbnails. Visit youtube.com/verify to verify your account, then you can manually set the thumbnail.";
+                }
+            } catch (e) {
+                // Error parsing JSON, continue with generic message
+            }
+
+            return "Note: Custom thumbnail could not be set. You can manually upload it on YouTube after verification.";
+        }
+
+        return null; // Success
+    } catch (error) {
+        console.error('Thumbnail upload error:', error);
+        return "Note: Custom thumbnail could not be set. You can manually upload it on YouTube.";
     }
 }

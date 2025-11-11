@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import * as geminiService from '../services/geminiService';
+import * as geminiService from '../services/geminiServiceProxy';
 import type { StoryVersion } from '../types';
 import { Icon } from './Icon';
 

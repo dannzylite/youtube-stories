@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import * as geminiService from '../services/geminiService';
+import * as geminiService from '../services/geminiServiceProxy';
 import * as youtubeService from '../services/youtubeService';
 import * as dataUtils from '../utils/dataUtils';
 import type { YouTubeMetadata, YouTubeAuthState } from '../types';
@@ -21,6 +21,7 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
     
     const [error, setError] = useState<string | null>(null);
     const [notification, setNotification] = useState('');
+    const [uploadSuccess, setUploadSuccess] = useState(false);
 
     const [regenerationPrompt, setRegenerationPrompt] = useState('');
     const [refinementPrompt, setRefinementPrompt] = useState('');
@@ -31,11 +32,12 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
     const [uploadProgress, setUploadProgress] = useState(0);
 
      useEffect(() => {
-        if (notification) {
+        if (notification && !uploadSuccess) {
+            // Only auto-clear regular notifications, not success messages
             const timeout = setTimeout(() => setNotification(''), 3000);
             return () => clearTimeout(timeout);
         }
-    }, [notification]);
+    }, [notification, uploadSuccess]);
 
     useEffect(() => {
         const generateInitialAssets = async () => {
@@ -43,15 +45,34 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
             setIsMetadataLoading(true);
             setError(null);
             try {
-                const thumbPromise = geminiService.generateThumbnail(story, title);
+                // Generate metadata and thumbnail separately to handle errors independently
                 const metaPromise = geminiService.generateYouTubeMetadata(story, title, channelName);
-                
-                const [thumbData, meta] = await Promise.all([thumbPromise, metaPromise]);
 
-                setThumbnailUrl(`data:image/png;base64,${thumbData}`);
+                let thumbnailError = null;
+                let thumbData = null;
+
+                try {
+                    thumbData = await geminiService.generateThumbnail(story, title);
+                    setThumbnailUrl(`data:image/png;base64,${thumbData}`);
+                } catch (thumbErr: any) {
+                    // Check if it's a billing error for Imagen
+                    if (thumbErr?.message?.includes('billed users') || thumbErr?.error?.message?.includes('billed users')) {
+                        thumbnailError = "Imagen API requires billing to be enabled. Please enable billing in your Google AI Studio account, or upload a custom thumbnail.";
+                    } else {
+                        thumbnailError = "Failed to generate thumbnail. You can upload a custom thumbnail instead.";
+                    }
+                    console.error("Thumbnail generation error:", thumbErr);
+                }
+
+                const meta = await metaPromise;
                 setMetadata(meta);
+
+                // Set error only if thumbnail failed (non-fatal error)
+                if (thumbnailError) {
+                    setError(thumbnailError);
+                }
             } catch (err) {
-                setError("Failed to generate YouTube assets. Please try again.");
+                setError("Failed to generate YouTube metadata. Please try again.");
                 console.error(err);
             } finally {
                 setIsThumbnailLoading(false);
@@ -112,6 +133,28 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
         }
     };
 
+    const handleThumbnailUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            if (!file.type.startsWith('image/')) {
+                setError('Please upload a valid image file (PNG, JPG, etc.).');
+                return;
+            }
+
+            // Read the file and convert to base64
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setThumbnailUrl(reader.result as string);
+                setNotification('Custom thumbnail uploaded!');
+                setError(null);
+            };
+            reader.onerror = () => {
+                setError('Failed to read image file.');
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
     const handleRegenerateMetadata = async () => {
         if (!channelName.trim()) return;
         setIsMetadataLoading(true);
@@ -145,9 +188,25 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
             setError('Missing video file, metadata, or thumbnail.');
             return;
         }
+
+        // Check YouTube authentication status
+        if (youtubeAuthState.state !== 'signed_in') {
+            setError('Please sign in to YouTube in Settings before uploading.');
+            return;
+        }
+
+        console.log('Starting upload with:', {
+            title,
+            videoFileName: videoFile.name,
+            hasThumbnail: !!thumbnailUrl,
+            hasMetadata: !!metadata,
+            authState: youtubeAuthState.state
+        });
+
         setIsUploading(true);
         setUploadProgress(0);
         setError(null);
+        setUploadSuccess(false);
         setNotification('Starting YouTube upload...');
 
         try {
@@ -163,13 +222,33 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
                  setUploadProgress(progress);
                  setNotification(`Uploading... ${Math.round(progress)}%`);
             });
-            
-            setNotification('Successfully posted to YouTube!');
 
-        } catch (err) {
-             const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during upload.';
-             setError(`Upload failed: ${errorMessage}`);
-             console.error(err);
+            // Upload completed successfully!
+            setUploadSuccess(true);
+            setNotification('🎉 Video successfully uploaded to YouTube!');
+
+            // Keep the success notification visible for longer
+            setTimeout(() => {
+                setUploadSuccess(false);
+            }, 10000); // 10 seconds
+
+        } catch (err: any) {
+             // Check if this is a partial success (video uploaded but thumbnail failed)
+             if (err.partialSuccess) {
+                 setUploadSuccess(true);
+                 setNotification('✅ Video uploaded successfully!');
+                 setError(err.message); // Show the thumbnail warning as an error
+
+                 // Keep the success notification visible
+                 setTimeout(() => {
+                     setUploadSuccess(false);
+                 }, 10000);
+             } else {
+                 const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred during upload.';
+                 setError(`Upload failed: ${errorMessage}`);
+                 console.error(err);
+                 setUploadSuccess(false);
+             }
         } finally {
             setIsUploading(false);
             setUploadProgress(0);
@@ -177,16 +256,20 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
     };
 
 
-    const isPostButtonDisabled = youtubeAuthState.state !== 'signed_in' 
-        || isUploading 
-        || isThumbnailLoading 
-        || isMetadataLoading 
-        || !videoFile;
+    const isPostButtonDisabled = youtubeAuthState.state !== 'signed_in'
+        || isUploading
+        || isMetadataLoading
+        || !videoFile
+        || !thumbnailUrl; // Require a thumbnail (either generated or uploaded)
 
     return (
         <div className="space-y-8">
              {notification && (
-                <div className="fixed top-5 right-5 bg-green-900 border border-green-700 text-green-200 px-4 py-2 rounded-md text-center shadow-lg z-50">
+                <div className={`fixed top-5 right-5 px-6 py-4 rounded-lg text-center shadow-2xl z-50 transition-all ${
+                    uploadSuccess
+                        ? 'bg-green-600 border-2 border-green-400 text-white text-lg font-bold animate-pulse'
+                        : 'bg-green-900 border border-green-700 text-green-200'
+                }`}>
                     {notification}
                 </div>
             )}
@@ -233,11 +316,32 @@ export const YouTubeAssetsScreen: React.FC<YouTubeAssetsScreenProps> = ({ title,
                 </div>
                 
                 {/* Thumbnail Editing Tools */}
-                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700 space-y-3">
+                        <h4 className="font-semibold text-white">Upload Custom Thumbnail</h4>
+                        <p className="text-sm text-gray-400">Upload your own thumbnail image (PNG, JPG, etc.).</p>
+                        <div className="flex items-center justify-center w-full">
+                            <label htmlFor="thumbnail-upload" className="w-full flex flex-col items-center justify-center h-32 border-2 border-gray-600 border-dashed rounded-lg cursor-pointer bg-gray-800/50 hover:bg-gray-800">
+                                <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                                    <Icon name="upload" className="w-8 h-8 mb-2 text-gray-400" />
+                                    <p className="text-xs text-gray-400">Click to upload</p>
+                                    <p className="text-xs text-gray-500">PNG, JPG, or WEBP</p>
+                                </div>
+                                <input
+                                    id="thumbnail-upload"
+                                    type="file"
+                                    className="hidden"
+                                    accept="image/*"
+                                    onChange={handleThumbnailUpload}
+                                />
+                            </label>
+                        </div>
+                    </div>
+
                     <div className="bg-gray-900/50 p-4 rounded-lg border border-gray-700 space-y-3">
                         <h4 className="font-semibold text-white">Regenerate Thumbnail</h4>
                         <p className="text-sm text-gray-400">Write a new prompt to generate a completely different thumbnail from scratch.</p>
-                        <textarea 
+                        <textarea
                             value={regenerationPrompt}
                             onChange={(e) => setRegenerationPrompt(e.target.value)}
                             rows={3}

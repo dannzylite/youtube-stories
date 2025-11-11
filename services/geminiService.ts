@@ -6,28 +6,29 @@ let isInitialized = false;
 
 /**
  * Initializes the GoogleGenAI client instance with a provided API key.
- * This must be called once at application startup.
+ * Note: Most Gemini API calls now go through the backend proxy.
+ * This is only used for special modalities like audio generation.
  */
-export function init(apiKey: string): void {
+export function init(apiKey?: string): void {
+    // Backend proxy handles most calls now
+    // Only initialize if needed for special features (like audio)
+    if (!apiKey) {
+        console.log("Gemini client not initialized - using backend proxy");
+        return;
+    }
+
     if (isInitialized) {
         console.warn("Gemini AI client is already initialized.");
         return;
     }
-    
-    if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') {
-        throw new Error("Gemini AI client cannot be initialized. API Key is missing or a placeholder.");
-    }
 
     try {
-        // Initialize the client. This might throw an error if the key is malformed.
         ai = new GoogleGenAI({ apiKey });
         isInitialized = true;
     } catch (error) {
         console.error("Failed to initialize GoogleGenAI client:", error);
         ai = null;
         isInitialized = false;
-        // Re-throw a more user-friendly error to be displayed in the UI.
-        throw new Error("Failed to initialize Gemini AI. The API Key in env.js might be invalid or malformed.");
     }
 }
 

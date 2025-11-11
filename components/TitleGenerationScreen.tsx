@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import * as geminiService from '../services/geminiService';
+import * as geminiService from '../services/geminiServiceProxy';
 import type { AnalysisData, IngestData, TitleSuggestion } from '../types';
 import { AnalysisPreview } from './AnalysisPreview';
 import { TitleSuggestions } from './TitleSuggestions';
