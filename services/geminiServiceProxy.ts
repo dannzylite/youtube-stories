@@ -62,7 +62,7 @@ export async function analyzeTranscript(transcript: string, title: string, image
     parts.push(textPart);
 
     const data = await callBackendAPI('/api/gemini/generate', {
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.0-flash-exp',
         contents: { parts },
         config: {
             responseMimeType: "application/json",
@@ -114,7 +114,7 @@ export async function generateTitleSuggestions(analysis: AnalysisData, transcrip
     `;
 
     const data = await callBackendAPI('/api/gemini/generate', {
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash-exp',
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -153,7 +153,7 @@ export async function generateBackgroundSuggestions(analysis: AnalysisData, tran
     `;
 
     const data = await callBackendAPI('/api/gemini/generate', {
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash-exp',
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -214,7 +214,7 @@ export async function generateStoryPart(title: string, background: string, trans
     IMPORTANT: Only return the new text you generate for this part. Do NOT repeat any of the previous story. Do NOT add any conversational text or introductory phrases like "Here is the next part:". Just write the story content.`;
 
     const data = await callBackendAPI('/api/gemini/generate', {
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.0-flash-exp',
         contents: promptContext,
     });
 
@@ -274,7 +274,7 @@ export async function generateYouTubeMetadata(story: string, title: string, chan
     `;
 
     const data = await callBackendAPI('/api/gemini/generate', {
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.0-flash-exp',
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -292,5 +292,140 @@ export async function generateYouTubeMetadata(story: string, title: string, chan
     return JSON.parse(data.text) as YouTubeMetadata;
 }
 
-// Speech generation functions remain client-side as they use special modalities
-export { generateSpeechPreview, generateSpeechFromLongText, refineThumbnail } from './geminiService';
+// Speech generation via backend API
+export async function generateSpeechPreview(voiceName: string): Promise<Uint8Array> {
+    const data = await callBackendAPI('/api/gemini/generate-speech-preview', {
+        voiceName
+    });
+
+    const base64Audio = data.audioData;
+    const decodedAudio = atob(base64Audio);
+    const len = decodedAudio.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = decodedAudio.charCodeAt(i);
+    }
+    return bytes;
+}
+
+async function generateSpeech(text: string, voiceName: string, retries = 3): Promise<Uint8Array> {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const data = await callBackendAPI('/api/gemini/generate-speech', {
+                text,
+                voiceName
+            });
+
+            const base64Audio = data.audioData;
+            const decodedAudio = atob(base64Audio);
+            const len = decodedAudio.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = decodedAudio.charCodeAt(i);
+            }
+            return bytes;
+        } catch (error) {
+            console.error(`[Voice Generation] Attempt ${attempt}/${retries} failed:`, error);
+
+            if (attempt === retries) {
+                throw error; // Re-throw on final attempt
+            }
+
+            // Exponential backoff: wait longer between retries
+            const backoffMs = attempt * 3000; // 3s, 6s, 9s...
+            console.log(`[Voice Generation] Retrying in ${backoffMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+        }
+    }
+
+    throw new Error('Failed to generate speech after all retries');
+}
+
+export async function generateSpeechFromLongText(
+    text: string,
+    voiceName: string,
+    onProgress: (progress: number, total: number) => void
+): Promise<Uint8Array> {
+    const CHUNK_SIZE = 8000; // Balanced chunk size to avoid rate limits while maintaining quality
+
+    console.log(`[Voice Generation] Starting speech generation for text of length: ${text.length}`);
+
+    const chunks: string[] = [];
+    let remainingText = text;
+    let totalProcessedChars = 0;
+
+    while (remainingText.length > 0) {
+        if (remainingText.length <= CHUNK_SIZE) {
+            chunks.push(remainingText);
+            totalProcessedChars += remainingText.length;
+            console.log(`[Voice Generation] Final chunk ${chunks.length}: ${remainingText.length} chars`);
+            break;
+        }
+
+        let chunk = remainingText.substring(0, CHUNK_SIZE);
+        let lastPeriod = chunk.lastIndexOf('.');
+        let lastNewline = chunk.lastIndexOf('\n');
+
+        let splitIndex = Math.max(lastPeriod, lastNewline);
+        if (splitIndex === -1) {
+            splitIndex = CHUNK_SIZE;
+        } else {
+            splitIndex += 1;
+        }
+
+        const currentChunk = remainingText.substring(0, splitIndex);
+        chunks.push(currentChunk);
+        totalProcessedChars += currentChunk.length;
+        console.log(`[Voice Generation] Chunk ${chunks.length}: ${currentChunk.length} chars`);
+
+        remainingText = remainingText.substring(splitIndex);
+    }
+
+    console.log(`[Voice Generation] Split into ${chunks.length} chunks. Total characters: ${totalProcessedChars} (original: ${text.length})`);
+
+    if (totalProcessedChars !== text.length) {
+        console.error(`[Voice Generation] WARNING: Character count mismatch! Processed ${totalProcessedChars} but original was ${text.length}`);
+    }
+
+    const audioChunks: Uint8Array[] = [];
+    const totalChunks = chunks.length;
+
+    for (let i = 0; i < totalChunks; i++) {
+        onProgress(i + 1, totalChunks);
+        console.log(`[Voice Generation] Processing chunk ${i + 1}/${totalChunks}...`);
+
+        // Add delay between requests to avoid rate limiting (except for first chunk)
+        if (i > 0) {
+            const delayMs = 2000; // 2 second delay between chunks
+            console.log(`[Voice Generation] Waiting ${delayMs}ms before processing next chunk...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+
+        const audioData = await generateSpeech(chunks[i], voiceName);
+        audioChunks.push(audioData);
+        console.log(`[Voice Generation] Chunk ${i + 1} generated ${audioData.length} bytes of audio`);
+    }
+
+    const totalLength = audioChunks.reduce((acc, val) => acc + val.length, 0);
+    const concatenatedAudio = new Uint8Array(totalLength);
+
+    let offset = 0;
+    for (const chunk of audioChunks) {
+        concatenatedAudio.set(chunk, offset);
+        offset += chunk.length;
+    }
+
+    console.log(`[Voice Generation] Complete! Generated ${totalLength} bytes of audio`);
+
+    return concatenatedAudio;
+}
+
+// Thumbnail refinement via backend API
+export async function refineThumbnail(base64ImageData: string, prompt: string): Promise<string> {
+    const data = await callBackendAPI('/api/gemini/refine-thumbnail', {
+        base64ImageData,
+        prompt
+    });
+
+    return data.imageBytes;
+}

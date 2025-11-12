@@ -39,7 +39,7 @@ export function init(apiKey?: string): void {
  */
 function getAiClient(): GoogleGenAI {
     if (!isInitialized || !ai) {
-        throw new Error("Gemini AI client has not been initialized. Call init() with a valid API key at app startup.");
+        throw new Error("Gemini AI client has not been initialized. Speech generation requires a client-side Gemini API key. Please configure the GEMINI_API_KEY in your environment or use the backend API proxy for text generation.");
     }
     return ai;
 }

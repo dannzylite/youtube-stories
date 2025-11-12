@@ -45,8 +45,8 @@ function App() {
     useEffect(() => {
         const initializeApp = async () => {
             try {
-                // Note: Gemini API calls now go through the backend proxy
-                // No need to initialize geminiService with API key anymore
+                // All Gemini API calls now go through the backend proxy
+                // No client-side API key needed
 
                 // YouTube service still needs initialization for OAuth
                 // The backend handles the YouTube Data API key

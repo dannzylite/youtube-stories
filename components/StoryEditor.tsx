@@ -20,10 +20,15 @@ interface StoryEditorProps {
 
 const NARRATOR_VOICES = [
     { id: 'Charon', name: 'Deep Narrator' },
-    { id: 'Fenrir', name: 'Gravelly Storyteller' },
-    { id: 'Puck', name: 'Authoritative Voice' },
-    { id: 'Zephyr', name: 'Calm Chronicler' },
     { id: 'Kore', name: 'Eloquent Orator' },
+    { id: 'Puck', name: 'Authoritative Voice' },
+    { id: 'Fenrir', name: 'Gravelly Storyteller' },
+    { id: 'Aoede', name: 'Smooth Narrator' },
+    { id: 'Callirrhoe', name: 'Gentle Storyteller' },
+    { id: 'Orus', name: 'Bold Narrator' },
+    { id: 'Zephyr', name: 'Calm Chronicler' },
+    { id: 'Enceladus', name: 'Rich Narrator' },
+    { id: 'Leda', name: 'Clear Voice' },
 ];
 
 function writeString(view: DataView, offset: number, string: string) {
@@ -174,6 +179,11 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
         setIsGeneratingSpeech(true);
         setSpeechGenerationProgress('');
         setNotification('Starting audio generation...');
+
+        console.log(`[Story Editor] Generating voice for story with ${currentStory.length} characters`);
+        console.log(`[Story Editor] Story preview: ${currentStory.substring(0, 100)}...`);
+        console.log(`[Story Editor] Story ending: ...${currentStory.substring(currentStory.length - 100)}`);
+
         try {
             const onProgress = (current: number, total: number) => {
                 const progressText = `Generating audio... (${current}/${total})`;
