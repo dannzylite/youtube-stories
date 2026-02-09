@@ -18,6 +18,11 @@ dist-ssr
 .env.*.local
 server/.env
 
+# Google Cloud service account keys (DO NOT COMMIT!)
+server/service-account-key.json
+service-account-key.json
+**/service-account-key.json
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -28,3 +33,4 @@ server/.env
 *.njsproj
 *.sln
 *.sw?
+nul

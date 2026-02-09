@@ -14,6 +14,7 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
     const [imageFile, setImageFile] = useState<File | null>(null);
     const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
     const [error, setError] = useState('');
+    const [skipToVoice, setSkipToVoice] = useState(false);
 
     const handleTranscriptChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         setTranscript(e.target.value);
@@ -47,19 +48,38 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!title.trim()) {
-            setError('Please enter the competitor\'s title.');
-            return;
+
+        if (skipToVoice) {
+            // For voice-only mode, title becomes the story title and transcript is the story text
+            if (!title.trim()) {
+                setError('Please enter a title for your story.');
+                return;
+            }
+            if (transcript.length < TRANSCRIPT_MIN_LENGTH) {
+                setError(`Story text is too short. Minimum length is ${TRANSCRIPT_MIN_LENGTH} characters.`);
+                return;
+            }
+            if (transcript.length > TRANSCRIPT_MAX_LENGTH) {
+                setError(`Story text is too long. Maximum length is ${TRANSCRIPT_MAX_LENGTH} characters.`);
+                return;
+            }
+        } else {
+            // Original validation for competitor analysis mode
+            if (!title.trim()) {
+                setError('Please enter the competitor\'s title.');
+                return;
+            }
+            if (transcript.length < TRANSCRIPT_MIN_LENGTH) {
+                setError(`Transcript is too short. Minimum length is ${TRANSCRIPT_MIN_LENGTH} characters.`);
+                return;
+            }
+            if (transcript.length > TRANSCRIPT_MAX_LENGTH) {
+                setError(`Transcript is too long. Maximum length is ${TRANSCRIPT_MAX_LENGTH} characters.`);
+                return;
+            }
         }
-        if (transcript.length < TRANSCRIPT_MIN_LENGTH) {
-            setError(`Transcript is too short. Minimum length is ${TRANSCRIPT_MIN_LENGTH} characters.`);
-            return;
-        }
-        if (transcript.length > TRANSCRIPT_MAX_LENGTH) {
-            setError(`Transcript is too long. Maximum length is ${TRANSCRIPT_MAX_LENGTH} characters.`);
-            return;
-        }
-        onAnalysisStart({ title: title.trim(), transcript, imageFile, imageDataUrl });
+
+        onAnalysisStart({ title: title.trim(), transcript, imageFile, imageDataUrl, skipToVoice });
     };
 
     const transcriptLength = transcript.trim().length;
@@ -68,21 +88,49 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
     return (
         <form onSubmit={handleSubmit} className="space-y-8">
             <div className="text-center">
-                <h2 className="text-3xl font-bold text-white sm:text-4xl">Analyze Competitor Assets</h2>
-                <p className="mt-4 text-lg text-gray-400">Provide the competitor's title, transcript, and thumbnail to get started.</p>
+                <h2 className="text-3xl font-bold text-white sm:text-4xl">
+                    {skipToVoice ? 'Generate Voice from Your Story' : 'Analyze Competitor Assets'}
+                </h2>
+                <p className="mt-4 text-lg text-gray-400">
+                    {skipToVoice
+                        ? 'Already have your story? Paste it below to generate voice-over directly.'
+                        : 'Provide the competitor\'s title, transcript, and thumbnail to get started.'}
+                </p>
             </div>
-            
+
+            {/* Mode Toggle */}
+            <div className="bg-indigo-900/30 border border-indigo-700/50 rounded-lg p-4">
+                <label className="flex items-center justify-center gap-3 cursor-pointer">
+                    <span className="text-sm font-medium text-gray-300">Competitor Analysis Mode</span>
+                    <div className="relative">
+                        <input
+                            type="checkbox"
+                            checked={skipToVoice}
+                            onChange={(e) => setSkipToVoice(e.target.checked)}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                    </div>
+                    <span className="text-sm font-medium text-gray-300">Quick Voice Generation</span>
+                </label>
+                <p className="text-xs text-gray-500 text-center mt-2">
+                    {skipToVoice
+                        ? 'Skip story generation and go directly to voice creation'
+                        : 'Analyze competitor content to generate new stories'}
+                </p>
+            </div>
+
             {error && <div className="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded-md text-center">{error}</div>}
 
             <div className="space-y-4">
                 <label htmlFor="title" className="block text-lg font-semibold text-white">
-                    Competitor's Title
+                    {skipToVoice ? 'Story Title' : 'Competitor\'s Title'}
                 </label>
                 <input
                     id="title"
                     type="text"
                     className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
-                    placeholder="Enter the original title here..."
+                    placeholder={skipToVoice ? "Enter your story title..." : "Enter the original title here..."}
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     required
@@ -91,23 +139,32 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
 
             <div className="space-y-4">
                 <label htmlFor="transcript" className="block text-lg font-semibold text-white">
-                    Competitor's Transcript
+                    {skipToVoice ? 'Your Story Text' : 'Competitor\'s Transcript'}
                 </label>
                 <textarea
                     id="transcript"
                     rows={15}
+                    maxLength={TRANSCRIPT_MAX_LENGTH}
                     className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
-                    placeholder="Paste the story transcript here..."
+                    placeholder={skipToVoice ? "Paste your complete story here..." : "Paste the story transcript here..."}
                     value={transcript}
                     onChange={handleTranscriptChange}
                 />
-                <p className="text-sm text-gray-500 text-right">{transcriptLength} / {TRANSCRIPT_MAX_LENGTH}</p>
+                <p className="text-sm text-gray-500 text-right">
+                    {transcriptLength.toLocaleString()} / {TRANSCRIPT_MAX_LENGTH.toLocaleString()} characters
+                    {transcriptLength > TRANSCRIPT_MAX_LENGTH * 0.9 && (
+                        <span className={transcriptLength > TRANSCRIPT_MAX_LENGTH * 0.95 ? 'text-red-400 ml-2' : 'text-yellow-400 ml-2'}>
+                            ({(TRANSCRIPT_MAX_LENGTH - transcriptLength).toLocaleString()} remaining)
+                        </span>
+                    )}
+                </p>
             </div>
 
-            <div className="space-y-4">
-                <label htmlFor="image-upload" className="block text-lg font-semibold text-white">
-                    Competitor's Thumbnail (Optional)
-                </label>
+            {!skipToVoice && (
+                <div className="space-y-4">
+                    <label htmlFor="image-upload" className="block text-lg font-semibold text-white">
+                        Competitor's Thumbnail (Optional)
+                    </label>
                 <div className="mt-2 flex justify-center rounded-lg border border-dashed border-gray-600 px-6 py-10">
                     {imageDataUrl ? (
                         <div className="relative group">
@@ -130,7 +187,8 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
                         </div>
                     )}
                 </div>
-            </div>
+                </div>
+            )}
 
             <div className="pt-5">
                 <button
@@ -139,7 +197,10 @@ export const IngestForm: React.FC<IngestFormProps> = ({ onAnalysisStart, isLoadi
                     className="w-full flex justify-center items-center gap-2 py-3 px-4 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isLoading ? <Icon name="loader" className="animate-spin h-5 w-5" /> : <Icon name="logo" className="h-5 w-5" />}
-                    <span>{isLoading ? 'Analyzing...' : 'Analyze & Continue'}</span>
+                    <span>{isLoading
+                        ? (skipToVoice ? 'Processing...' : 'Analyzing...')
+                        : (skipToVoice ? 'Continue to Voice Generation' : 'Analyze & Continue')
+                    }</span>
                 </button>
             </div>
         </form>

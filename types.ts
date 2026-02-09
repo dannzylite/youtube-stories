@@ -32,6 +32,7 @@ export interface IngestData {
     transcript: string;
     imageFile: File | null;
     imageDataUrl: string | null;
+    skipToVoice?: boolean;
 }
 
 export interface YouTubeMetadata {

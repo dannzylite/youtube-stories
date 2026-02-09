@@ -1,25 +1,55 @@
 import type { AnalysisData, TitleSuggestion, BackgroundSuggestion, YouTubeMetadata } from '../types';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// Dynamically determine API URL based on current hostname for network access
+const getApiBaseUrl = () => {
+    if (import.meta.env.VITE_API_URL) {
+        return import.meta.env.VITE_API_URL;
+    }
+    // Use the same hostname as the frontend, but on port 3001
+    const hostname = window.location.hostname;
+    return `http://${hostname}:3001`;
+};
 
 /**
  * Makes a request to the backend API proxy
+ * For long audio synthesis, this needs to wait up to 1 hour
  */
 async function callBackendAPI(endpoint: string, body: any) {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-    });
+    const apiBaseUrl = getApiBaseUrl(); // Get URL at request time, not module load time
 
-    if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'API request failed');
+    // Create an AbortController for timeout (set to 2 hours for long Gemini Pro TTS operations)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2 * 60 * 60 * 1000); // 2 hour timeout
+
+    try {
+        const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal, // Add abort signal
+            // Disable default timeouts
+            keepalive: false, // Don't use keepalive for long requests
+        });
+
+        clearTimeout(timeoutId); // Clear timeout on successful response
+
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.error || 'API request failed');
+        }
+
+        return response.json();
+    } catch (error: any) {
+        clearTimeout(timeoutId);
+
+        // Provide better error messages for timeout/abort
+        if (error.name === 'AbortError') {
+            throw new Error('Request timeout after 2 hours - this should not happen for long audio synthesis');
+        }
+        throw error;
     }
-
-    return response.json();
 }
 
 export async function analyzeTranscript(transcript: string, title: string, imageFile?: File): Promise<AnalysisData> {
@@ -114,7 +144,7 @@ export async function generateTitleSuggestions(analysis: AnalysisData, transcrip
     `;
 
     const data = await callBackendAPI('/api/gemini/generate', {
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash-preview-05-20',
         contents: prompt,
         config: {
             responseMimeType: "application/json",
@@ -176,46 +206,75 @@ export async function generateBackgroundSuggestions(analysis: AnalysisData, tran
 }
 
 export async function generateStoryPart(title: string, background: string, transcript: string, userPrompt: string, existingStory: string, generationNumber: number): Promise<{ storyPart: string, isComplete: boolean }> {
-    let promptContext = `You are a master storyteller. Your task is to write a compelling story based on the provided materials. Faithfully adhere to the title, background, and user's creative direction.
+    let partInstruction = '';
+    if (generationNumber === 1) {
+        partInstruction = `This is part 1 of 2. End on a compelling cliffhanger or natural break.`;
+    } else {
+        partInstruction = `This is part 2 of 2 - the FINAL part. Write a satisfying conclusion.`;
+    }
 
-    Title: ${title}
-    Background / Synopsis: ${background}
-    Original Transcript (for high-level context on plot points, characters, and style):
-    ---
-    ${transcript.substring(0, 2000)}...
-    ---
-    `;
+    let promptContext = `You are a master storyteller writing a LONG-FORM story.
+
+=== USER'S REQUIREMENTS (MUST BE FOLLOWED EXACTLY) ===
+${userPrompt}
+=== END OF REQUIREMENTS ===
+
+⚠️ CRITICAL LENGTH REQUIREMENT ⚠️
+The user has specified EXACT word count requirements in their prompt above.
+- If they ask for 8000 words, you MUST write approximately 8000 words (7500-8500 range)
+- If they ask for a long-form story, write AT LEAST 7000-8000 words per part
+- DO NOT write short summaries or abbreviated versions
+- DO NOT stop early - write the FULL length requested
+- ${partInstruction}
+
+CRITICAL WRITING INSTRUCTIONS:
+- This is a FULL, DETAILED, LONG-FORM story - not a summary or outline
+- Follow ALL requirements above: word count, tone, style, pacing, dialogue, structure
+- If specific writing style or narrative choices are mentioned, follow them precisely
+- Write complete scenes with full dialogue and cinematic detail
+
+Context for your story:
+
+Title: ${title}
+
+Background/Synopsis: ${background}
+
+Reference Transcript (use only as loose inspiration for plot/characters):
+---
+${transcript.substring(0, 2000)}...
+---
+`;
 
     if (existingStory) {
         const storyStart = existingStory.substring(0, 400);
         const storyEnd = existingStory.substring(existingStory.length - 400);
 
         promptContext += `
-        The story has already begun. Here is the start and the most recent part of the existing story to ensure a seamless continuation:
-        ---
-        ${storyStart}
-        ...
-        ${storyEnd}
-        ---
-        `;
-    }
-
-    let finalUserPrompt = userPrompt;
-
-    if (generationNumber === 1) {
-        finalUserPrompt += `\n\nIMPORTANT INSTRUCTION: Write the first part of the story. End on a compelling cliffhanger or a natural break to set up the second part. This is part 1 of 2.`;
-    } else {
-        finalUserPrompt += `\n\nIMPORTANT INSTRUCTION: This is the second and FINAL part of the story. Write a satisfying conclusion to the entire narrative in this part.`;
+Previous Story Content (continue seamlessly from this):
+---
+Beginning: ${storyStart}
+...
+Most Recent: ${storyEnd}
+---
+`;
     }
 
     promptContext += `
-    Your current instruction is: "${finalUserPrompt}"
+OUTPUT REQUIREMENTS:
+- Write the COMPLETE, FULL-LENGTH story as specified in the user's requirements
+- Write ONLY the story text - NO meta-commentary, NO introductions
+- NO repeating previous content
+- Match the EXACT word count specified by the user
+- Follow every single requirement from the user's prompt above
 
-    IMPORTANT: Only return the new text you generate for this part. Do NOT repeat any of the previous story. Do NOT add any conversational text or introductory phrases like "Here is the next part:". Just write the story content.`;
+Begin writing the FULL story now (remember: write the complete length requested):`;
 
     const data = await callBackendAPI('/api/gemini/generate', {
-        model: 'gemini-2.0-flash-exp',
+        model: 'gemini-2.5-flash-preview-05-20',
         contents: promptContext,
+        config: {
+            maxOutputTokens: 20000,
+        }
     });
 
     const storyPartText = data.text;
@@ -293,9 +352,11 @@ export async function generateYouTubeMetadata(story: string, title: string, chan
 }
 
 // Speech generation via backend API
-export async function generateSpeechPreview(voiceName: string): Promise<Uint8Array> {
+export async function generateSpeechPreview(voiceName: string, speakingRate: number = 1.0, engine: 'gemini' | 'google-cloud' = 'gemini'): Promise<Uint8Array> {
     const data = await callBackendAPI('/api/gemini/generate-speech-preview', {
-        voiceName
+        voiceName,
+        speakingRate,
+        engine
     });
 
     const base64Audio = data.audioData;
@@ -305,6 +366,29 @@ export async function generateSpeechPreview(voiceName: string): Promise<Uint8Arr
     for (let i = 0; i < len; i++) {
         bytes[i] = decodedAudio.charCodeAt(i);
     }
+    return bytes;
+}
+
+// Long audio synthesis - supports both Gemini TTS and Google Cloud TTS
+export async function generateLongAudio(text: string, voiceName: string, engine: 'gemini' | 'google-cloud' = 'gemini', speakingRate: number = 1.0): Promise<Uint8Array> {
+    console.log(`[Long Audio] Starting synthesis for ${text.length} characters with voice: ${voiceName} using ${engine} at ${speakingRate}x speed`);
+
+    const data = await callBackendAPI('/api/tts/synthesize-long-audio', {
+        text,
+        voiceName,
+        engine,
+        speakingRate
+    });
+
+    const base64Audio = data.audioData;
+    const decodedAudio = atob(base64Audio);
+    const len = decodedAudio.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+        bytes[i] = decodedAudio.charCodeAt(i);
+    }
+
+    console.log(`[Long Audio] Generated ${bytes.length} bytes of audio`);
     return bytes;
 }
 
@@ -428,4 +512,31 @@ export async function refineThumbnail(base64ImageData: string, prompt: string): 
     });
 
     return data.imageBytes;
+}
+
+// Batch image generation
+export interface BatchImageResult {
+    sceneNumber: number;
+    sceneDescription: string;
+    imagePrompt: string;
+    imageBytes: string;
+}
+
+export async function generateBatchImages(
+    story: string,
+    title: string,
+    numberOfImages: number,
+    style?: string
+): Promise<BatchImageResult[]> {
+    console.log(`[Batch Images] Requesting ${numberOfImages} images for story`);
+
+    const data = await callBackendAPI('/api/gemini/batch-generate-images', {
+        story,
+        title,
+        numberOfImages,
+        style
+    });
+
+    console.log(`[Batch Images] Received ${data.images.length} images`);
+    return data.images as BatchImageResult[];
 }

@@ -71,6 +71,22 @@ function App() {
         setLoading({ analysis: true });
         setError(null);
         try {
+            // If skipToVoice is true, go directly to the editor with the story
+            if (data.skipToVoice) {
+                setAppState({
+                    screen: 'editor',
+                    ingestData: data,
+                    title: data.title,
+                    background: '', // No background for quick voice mode
+                    story: data.transcript, // Use the transcript as the story
+                    isStoryComplete: true,
+                    generationCount: 2, // Mark as complete to show voice generation options
+                });
+                setLoading({});
+                return;
+            }
+
+            // Normal flow: analyze the transcript
             const analysis = await geminiService.analyzeTranscript(data.transcript, data.title, data.imageFile ?? undefined);
             setAppState({
                 screen: 'titleGeneration',

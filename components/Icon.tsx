@@ -27,6 +27,7 @@ export const Icon: React.FC<IconProps> = ({ name, ...props }) => {
     settings: <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-1.003 1.11-1.226M12 20.25a8.25 8.25 0 100-16.5 8.25 8.25 0 000 16.5zM12 12.75a2.25 2.25 0 100-4.5 2.25 2.25 0 000 4.5z" />,
     'youtube-connect': <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v7.5A2.25 2.25 0 005.25 18h13.5A2.25 2.25 0 0021 15.75v-7.5A2.25 2.25 0 0018.75 6H13.5m-3 4.5v-1.5m-3 1.5v-1.5m12 0v-1.5" />,
     upload: <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />,
+    download: <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />,
   };
 
   const svgProps = name === 'youtube' ? 

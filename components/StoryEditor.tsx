@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as geminiService from '../services/geminiServiceProxy';
 import type { StoryVersion } from '../types';
 import { Icon } from './Icon';
+import { BatchImageGenerator } from './BatchImageGenerator';
 
 interface StoryEditorProps {
     title: string;
@@ -18,18 +19,73 @@ interface StoryEditorProps {
     onProceedToAssets: () => void;
 }
 
-const NARRATOR_VOICES = [
-    { id: 'Charon', name: 'Deep Narrator' },
-    { id: 'Kore', name: 'Eloquent Orator' },
-    { id: 'Puck', name: 'Authoritative Voice' },
-    { id: 'Fenrir', name: 'Gravelly Storyteller' },
-    { id: 'Aoede', name: 'Smooth Narrator' },
-    { id: 'Callirrhoe', name: 'Gentle Storyteller' },
-    { id: 'Orus', name: 'Bold Narrator' },
-    { id: 'Zephyr', name: 'Calm Chronicler' },
-    { id: 'Enceladus', name: 'Rich Narrator' },
-    { id: 'Leda', name: 'Clear Voice' },
+// Gemini TTS Voices (30 premium voices)
+const GEMINI_VOICES = [
+    // Male Voices
+    { id: 'Charon', name: 'Charon (M) - Informative & Clear', gender: 'male' },
+    { id: 'Puck', name: 'Puck (M) - Upbeat & Energetic', gender: 'male' },
+    { id: 'Fenrir', name: 'Fenrir (M) - Excitable & Dynamic', gender: 'male' },
+    { id: 'Orus', name: 'Orus (M) - Firm & Decisive', gender: 'male' },
+    { id: 'Enceladus', name: 'Enceladus (M) - Breathy & Soft', gender: 'male' },
+    { id: 'Iapetus', name: 'Iapetus (M) - Clear & Articulate', gender: 'male' },
+    { id: 'Algenib', name: 'Algenib (M) - Gravelly Texture', gender: 'male' },
+    { id: 'Algieba', name: 'Algieba (M) - Smooth & Pleasant', gender: 'male' },
+    { id: 'Alnilam', name: 'Alnilam (M) - Firm & Strong', gender: 'male' },
+    { id: 'Rasalgethi', name: 'Rasalgethi (M) - Professional', gender: 'male' },
+    { id: 'Sadachbia', name: 'Sadachbia (M) - Lively & Animated', gender: 'male' },
+    { id: 'Sadaltager', name: 'Sadaltager (M) - Authoritative', gender: 'male' },
+    { id: 'Achird', name: 'Achird (M) - Friendly & Approachable', gender: 'male' },
+    { id: 'Schedar', name: 'Schedar (M) - Narrator', gender: 'male' },
+    { id: 'Zubenelgenubi', name: 'Zubenelgenubi (M) - Narrator', gender: 'male' },
+    { id: 'Umbriel', name: 'Umbriel (M) - Narrator', gender: 'male' },
+
+    // Female Voices
+    { id: 'Kore', name: 'Kore (F) - Firm & Confident', gender: 'female' },
+    { id: 'Leda', name: 'Leda (F) - Youthful & Energetic', gender: 'female' },
+    { id: 'Zephyr', name: 'Zephyr (F) - Bright & Cheerful', gender: 'female' },
+    { id: 'Aoede', name: 'Aoede (F) - Smooth Narrator', gender: 'female' },
+    { id: 'Callirrhoe', name: 'Callirrhoe (F) - Easy-going & Relaxed', gender: 'female' },
+    { id: 'Autonoe', name: 'Autonoe (F) - Bright & Optimistic', gender: 'female' },
+    { id: 'Despina', name: 'Despina (F) - Smooth & Flowing', gender: 'female' },
+    { id: 'Erinome', name: 'Erinome (F) - Clear & Precise', gender: 'female' },
+    { id: 'Gacrux', name: 'Gacrux (F) - Mature & Experienced', gender: 'female' },
+    { id: 'Laomedeia', name: 'Laomedeia (F) - Upbeat & Lively', gender: 'female' },
+    { id: 'Pulcherrima', name: 'Pulcherrima (F) - Expressive', gender: 'female' },
+    { id: 'Sulafat', name: 'Sulafat (F) - Warm & Welcoming', gender: 'female' },
+    { id: 'Vindemiatrix', name: 'Vindemiatrix (F) - Gentle & Kind', gender: 'female' },
+    { id: 'Achernar', name: 'Achernar (F) - Soft & Gentle', gender: 'female' },
 ];
+
+// Google Cloud TTS Voices - Prioritized for sleep/consistent content
+const GOOGLE_CLOUD_VOICES = [
+    // === CHIRP 3 HD VOICES (Best for Sleep - Realistic with breaths) ===
+    // These sound human with natural breaths and softer edges
+    { id: 'en-US-Chirp3-HD-Fenrir', name: '🌙 Fenrir (M) - Deep & Rumbly [KING OF SLEEP]', gender: 'male' },
+    { id: 'en-US-Chirp3-HD-Charon', name: '🌙 Charon (M) - Extremely Deep & Gravelly [SPACE/DEEP]', gender: 'male' },
+    { id: 'en-US-Chirp3-HD-Puck', name: '🌙 Puck (M) - Soft & Gentle [FAIRY TALES]', gender: 'male' },
+    { id: 'en-US-Chirp3-HD-Kore', name: '🌙 Kore (F) - Breathy & Soft [VERY RELAXING]', gender: 'female' },
+    { id: 'en-US-Chirp3-HD-Aoede', name: 'Aoede (F) - Smooth Narrator', gender: 'female' },
+    { id: 'en-US-Chirp3-HD-Orus', name: 'Orus (M) - Firm & Clear', gender: 'male' },
+    { id: 'en-US-Chirp3-HD-Leda', name: 'Leda (F) - Youthful (NOT for sleep)', gender: 'female' },
+    { id: 'en-US-Chirp3-HD-Zephyr', name: 'Zephyr (F) - Bright & Energetic (NOT for sleep)', gender: 'female' },
+
+    // === STUDIO VOICES (100% Consistent - More "Perfect") ===
+    // Frozen voices, no variation ever
+    { id: 'en-US-Studio-M', name: '⭐ Studio-M (M) - Deep & Authoritative [100% CONSISTENT]', gender: 'male' },
+    { id: 'en-US-Studio-O', name: '⭐ Studio-O (F) - Warm & Calming [100% CONSISTENT]', gender: 'female' },
+
+    // === NEURAL2 VOICES (Good Quality) ===
+    { id: 'en-US-Neural2-A', name: 'Neural2-A (M) - Casual & Friendly', gender: 'male' },
+    { id: 'en-US-Neural2-D', name: 'Neural2-D (M) - Clear & Professional', gender: 'male' },
+    { id: 'en-US-Neural2-I', name: 'Neural2-I (M) - Deep & Authoritative', gender: 'male' },
+    { id: 'en-US-Neural2-J', name: 'Neural2-J (M) - Warm & Smooth', gender: 'male' },
+    { id: 'en-US-Neural2-C', name: 'Neural2-C (F) - Bright & Youthful', gender: 'female' },
+    { id: 'en-US-Neural2-E', name: 'Neural2-E (F) - Clear & Energetic', gender: 'female' },
+    { id: 'en-US-Neural2-F', name: 'Neural2-F (F) - Calm & Soothing', gender: 'female' },
+    { id: 'en-US-Neural2-G', name: 'Neural2-G (F) - Professional & Precise', gender: 'female' },
+    { id: 'en-US-Neural2-H', name: 'Neural2-H (F) - Mature & Confident', gender: 'female' },
+];
+
 
 function writeString(view: DataView, offset: number, string: string) {
     for (let i = 0; i < string.length; i++) {
@@ -82,19 +138,44 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
     const [notification, setNotification] = useState('');
     const [isGeneratingSpeech, setIsGeneratingSpeech] = useState(false);
     const [speechGenerationProgress, setSpeechGenerationProgress] = useState('');
-    const [selectedVoice, setSelectedVoice] = useState('Charon');
     const [isPreviewing, setIsPreviewing] = useState<boolean>(false);
+    const [progressTimer, setProgressTimer] = useState<NodeJS.Timeout | null>(null);
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [estimatedTotalSeconds, setEstimatedTotalSeconds] = useState(0);
+    // Default to google-cloud since it's more reliable and faster
+    const [ttsEngine, setTtsEngine] = useState<'gemini' | 'google-cloud'>('google-cloud');
+    // Speaking rate: 0.25 (slowest) to 4.0 (fastest), 1.0 is normal
+    const [speakingRate, setSpeakingRate] = useState(1.0);
+
+    // Dynamically select voice list based on engine
+    const NARRATOR_VOICES = ttsEngine === 'google-cloud' ? GOOGLE_CLOUD_VOICES : GEMINI_VOICES;
+    const [selectedVoice, setSelectedVoice] = useState(NARRATOR_VOICES[0].id);
     
     useEffect(() => {
         setCurrentStory(story);
     }, [story]);
 
+    // Reset voice selection when engine changes
     useEffect(() => {
-        if (notification) {
+        const voices = ttsEngine === 'google-cloud' ? GOOGLE_CLOUD_VOICES : GEMINI_VOICES;
+        setSelectedVoice(voices[0].id);
+    }, [ttsEngine]);
+
+    useEffect(() => {
+        if (notification && !isGeneratingSpeech) {
             const timeout = setTimeout(() => setNotification(''), 3000);
             return () => clearTimeout(timeout);
         }
-    }, [notification]);
+    }, [notification, isGeneratingSpeech]);
+
+    // Cleanup timer when component unmounts or generation completes
+    useEffect(() => {
+        return () => {
+            if (progressTimer) {
+                clearInterval(progressTimer);
+            }
+        };
+    }, [progressTimer]);
 
     const handleStoryChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
         const newValue = e.target.value;
@@ -161,10 +242,12 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
 
     const handlePreviewVoice = async (voiceId: string) => {
         setIsPreviewing(true);
-        const voiceName = NARRATOR_VOICES.find(v => v.id === voiceId)?.name || 'the selected voice';
+        const voiceObj = NARRATOR_VOICES.find(v => v.id === voiceId);
+        const voiceName = voiceObj?.name || 'the selected voice';
         setNotification(`Previewing ${voiceName}...`);
         try {
-            const pcmData = await geminiService.generateSpeechPreview(voiceId);
+            // Voice ID is already correct based on selected engine
+            const pcmData = await geminiService.generateSpeechPreview(voiceId, speakingRate, ttsEngine);
             await playPcmAudio(pcmData);
         } catch (error) {
             console.error("Failed to generate voice preview", error);
@@ -178,6 +261,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
     const handleTextToSpeech = async () => {
         setIsGeneratingSpeech(true);
         setSpeechGenerationProgress('');
+        setElapsedSeconds(0);
         setNotification('Starting audio generation...');
 
         console.log(`[Story Editor] Generating voice for story with ${currentStory.length} characters`);
@@ -185,13 +269,74 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
         console.log(`[Story Editor] Story ending: ...${currentStory.substring(currentStory.length - 100)}`);
 
         try {
-            const onProgress = (current: number, total: number) => {
-                const progressText = `Generating audio... (${current}/${total})`;
-                setSpeechGenerationProgress(progressText);
-                setNotification(progressText);
-            };
+            const storyLength = currentStory.length;
 
-            const pcmData = await geminiService.generateSpeechFromLongText(currentStory, selectedVoice, onProgress);
+            // Calculate estimated time based on selected TTS engine
+            // Updated to match backend chunk sizes and delays
+            const CHUNK_SIZE = ttsEngine === 'gemini' ? 3000 : 4000; // Gemini: 3000, Google Cloud: 4000
+            const numChunks = Math.ceil(storyLength / CHUNK_SIZE);
+
+            let secondsPerChunk: number;
+            let avgDelayBetweenChunks: number;
+
+            if (ttsEngine === 'gemini') {
+                // Gemini TTS: ~15 seconds to generate + 8-11 seconds delay between chunks
+                // With retry logic, estimate higher
+                secondsPerChunk = 20; // Generation time
+                avgDelayBetweenChunks = 9; // Average delay (8s base + progressive delays)
+            } else {
+                // Google Cloud TTS: ~5 seconds per chunk + 0.5s delay
+                secondsPerChunk = 5;
+                avgDelayBetweenChunks = 0.5;
+            }
+
+            const estimatedSeconds = (numChunks * secondsPerChunk) + ((numChunks - 1) * avgDelayBetweenChunks);
+
+            setEstimatedTotalSeconds(estimatedSeconds);
+
+            const estimatedMinutes = Math.ceil(estimatedSeconds / 60);
+            console.log(`[Story Editor] Estimated generation time: ${estimatedMinutes} minutes for ${storyLength} characters (${numChunks} chunks)`);
+
+            // Start progress timer
+            const timer = setInterval(() => {
+                setElapsedSeconds((prev: number) => {
+                    const newElapsed = prev + 1;
+                    const remainingSeconds = Math.max(0, estimatedSeconds - newElapsed);
+                    const remainingMinutes = Math.floor(remainingSeconds / 60);
+                    const remainingSecondsDisplay = remainingSeconds % 60;
+                    const elapsedMinutes = Math.floor(newElapsed / 60);
+                    const elapsedSecondsDisplay = newElapsed % 60;
+                    const progressPercent = Math.min(100, Math.floor((newElapsed / estimatedSeconds) * 100));
+
+                    const engineName = ttsEngine === 'gemini' ? 'Gemini TTS' : 'Google Cloud TTS';
+
+                    if (storyLength > 20000) {
+                        setNotification(
+                            `Generating audio with ${engineName} (${storyLength.toLocaleString()} chars, ${numChunks} chunks)...\n` +
+                            `Progress: ${progressPercent}% | ` +
+                            `Elapsed: ${elapsedMinutes}:${elapsedSecondsDisplay.toString().padStart(2, '0')} | ` +
+                            `Remaining: ~${remainingMinutes}:${remainingSecondsDisplay.toString().padStart(2, '0')}`
+                        );
+                    } else {
+                        setNotification(
+                            `Generating audio with ${engineName} (${numChunks} chunks)...\n` +
+                            `Elapsed: ${elapsedMinutes}:${elapsedSecondsDisplay.toString().padStart(2, '0')} | ` +
+                            `Remaining: ~${remainingMinutes}:${remainingSecondsDisplay.toString().padStart(2, '0')}`
+                        );
+                    }
+
+                    return newElapsed;
+                });
+            }, 1000);
+            setProgressTimer(timer);
+
+            // Use the selected TTS engine for long audio synthesis
+            // Voice ID is already correct based on selected engine
+            const pcmData = await geminiService.generateLongAudio(currentStory, selectedVoice, ttsEngine, speakingRate);
+
+            // Clear the timer
+            clearInterval(timer);
+            setProgressTimer(null);
 
             const wavBlob = createWavBlob(pcmData);
             const url = URL.createObjectURL(wavBlob);
@@ -203,12 +348,54 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            
+
             setNotification('Audio downloaded successfully!');
 
-        } catch (error) {
+        } catch (error: any) {
             console.error("Failed to generate speech", error);
-            setNotification('Failed to generate audio. Please try again.');
+
+            // Clear the timer on error
+            if (progressTimer) {
+                clearInterval(progressTimer);
+                setProgressTimer(null);
+            }
+
+            // Check if it's a configuration error (missing service account, GCS bucket, etc.)
+            if (error?.message?.includes('GCS_BUCKET_NAME') ||
+                error?.message?.includes('GCP_PROJECT_ID') ||
+                error?.message?.includes('ENOENT') ||
+                error?.message?.includes('service-account-key') ||
+                error?.message?.includes('PERMISSION_DENIED')) {
+                setNotification('Long audio synthesis not configured. Using chunked generation...');
+
+                // Fallback to old method if GCS is not configured
+                try {
+                    const onProgress = (current: number, total: number) => {
+                        const progressText = `Generating audio... (${current}/${total})`;
+                        setSpeechGenerationProgress(progressText);
+                        setNotification(progressText);
+                    };
+
+                    const pcmData = await geminiService.generateSpeechFromLongText(currentStory, selectedVoice, onProgress);
+                    const wavBlob = createWavBlob(pcmData);
+                    const url = URL.createObjectURL(wavBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const timestamp = new Date().toISOString().replace(/:/g, '-');
+                    a.download = `story_audio_${timestamp}.wav`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+
+                    setNotification('Audio downloaded successfully (using fallback method)!');
+                } catch (fallbackError) {
+                    console.error("Fallback audio generation also failed", fallbackError);
+                    setNotification('Failed to generate audio. Please try again.');
+                }
+            } else {
+                setNotification('Failed to generate audio. Please try again.');
+            }
         } finally {
             setIsGeneratingSpeech(false);
             setSpeechGenerationProgress('');
@@ -287,8 +474,15 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
                     value={currentStory}
                     onChange={handleStoryChange}
                     rows={20}
+                    maxLength={200000}
                     className="w-full bg-gray-900/80 border border-gray-600 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm text-gray-200 leading-relaxed px-4 py-2"
                 />
+                <div className="flex justify-between items-center text-xs text-gray-400 mt-1">
+                    <span>Character count: {currentStory.length.toLocaleString()} / 200,000</span>
+                    <span className={currentStory.length > 180000 ? 'text-yellow-400' : currentStory.length > 195000 ? 'text-red-400' : ''}>
+                        {currentStory.length > 180000 && `${(200000 - currentStory.length).toLocaleString()} characters remaining`}
+                    </span>
+                </div>
             </div>
             
             <div className="pt-8 border-t border-gray-700 space-y-4">
@@ -328,6 +522,68 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
                 <div className="space-y-4 p-4 bg-gray-900/50 rounded-lg border border-gray-700">
                     <h4 className="text-base font-semibold text-white">Audio Generation</h4>
                     <div className="flex flex-col gap-4">
+                        {/* TTS Engine Selector */}
+                        <div className="flex items-center gap-4 p-3 bg-gray-800/50 rounded-md border border-gray-600">
+                            <label className="text-sm font-medium text-gray-300">Engine:</label>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setTtsEngine('gemini')}
+                                    disabled={isGeneratingSpeech}
+                                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                        ttsEngine === 'gemini'
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                    <div className="flex flex-col items-start">
+                                        <span>Gemini TTS</span>
+                                        <span className="text-xs opacity-75">Premium voices, slower</span>
+                                    </div>
+                                </button>
+                                <button
+                                    onClick={() => setTtsEngine('google-cloud')}
+                                    disabled={isGeneratingSpeech}
+                                    className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                                        ttsEngine === 'google-cloud'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                    } disabled:opacity-50 disabled:cursor-not-allowed`}
+                                >
+                                    <div className="flex flex-col items-start">
+                                        <span>Google Cloud TTS</span>
+                                        <span className="text-xs opacity-75">Fast, 3x quicker</span>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Speed Control - Only works with Google Cloud TTS */}
+                        <div className="flex items-center gap-4 p-3 bg-gray-800/50 rounded-md border border-gray-600">
+                            <label htmlFor="speed-slider" className="text-sm font-medium text-gray-300 whitespace-nowrap">
+                                Speed: <span className="text-white font-bold">{speakingRate.toFixed(2)}x</span>
+                                {ttsEngine === 'gemini' && (
+                                    <span className="ml-2 text-xs text-yellow-400">(Google Cloud only)</span>
+                                )}
+                            </label>
+                            <input
+                                id="speed-slider"
+                                type="range"
+                                min="0.5"
+                                max="2.0"
+                                step="0.05"
+                                value={speakingRate}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSpeakingRate(parseFloat(e.target.value))}
+                                disabled={isGeneratingSpeech || isPreviewing || ttsEngine === 'gemini'}
+                                className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                aria-label="Adjust speaking rate"
+                            />
+                            <div className="flex gap-2 text-xs text-gray-400">
+                                <span>0.5x</span>
+                                <span>→</span>
+                                <span>2.0x</span>
+                            </div>
+                        </div>
+
                         <div className="flex flex-wrap items-center gap-4">
                             <div className="flex items-center gap-2">
                                 <label htmlFor="voice-select" className="text-sm font-medium text-gray-300">Voice:</label>
@@ -351,24 +607,56 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({ title, background, sto
                                 className="p-2.5 text-sm font-medium rounded-md text-white bg-gray-600 hover:bg-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
                                 title="Preview Voice"
                             >
-                                {isPreviewing ? 
-                                    <Icon name="loader" className="animate-spin h-4 w-4"/> : 
+                                {isPreviewing ?
+                                    <Icon name="loader" className="animate-spin h-4 w-4"/> :
                                     <Icon name="play" className="h-4 w-4" />
                                 }
                             </button>
                         </div>
-                         <button 
-                            onClick={handleTextToSpeech} 
+                         <button
+                            onClick={handleTextToSpeech}
                             disabled={isGeneratingSpeech || isPreviewing || !currentStory.trim()}
                             className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {isGeneratingSpeech ? <Icon name="loader" className="animate-spin h-4 w-4"/> : <Icon name="tts" className="h-4 w-4" />}
                             <span>{speechGenerationProgress || (isGeneratingSpeech ? 'Generating...' : 'Generate Audio')}</span>
                         </button>
+
+                        {/* Progress indicator */}
+                        {isGeneratingSpeech && estimatedTotalSeconds > 0 && (
+                            <div className="space-y-2">
+                                <div className="w-full bg-gray-700 rounded-full h-2 overflow-hidden">
+                                    <div
+                                        className="bg-teal-500 h-full transition-all duration-1000 ease-linear"
+                                        style={{ width: `${Math.min(100, (elapsedSeconds / estimatedTotalSeconds) * 100)}%` }}
+                                    />
+                                </div>
+                                <div className="text-sm text-gray-300 font-mono">
+                                    <div className="flex justify-between">
+                                        <span>Progress: {Math.min(100, Math.floor((elapsedSeconds / estimatedTotalSeconds) * 100))}%</span>
+                                        <span>
+                                            {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, '0')} /
+                                            ~{Math.floor(estimatedTotalSeconds / 60)}:{(estimatedTotalSeconds % 60).toString().padStart(2, '0')}
+                                        </span>
+                                    </div>
+                                    <div className="text-xs text-gray-400 mt-1">
+                                        Time remaining: ~{Math.floor(Math.max(0, estimatedTotalSeconds - elapsedSeconds) / 60)}:
+                                        {(Math.max(0, estimatedTotalSeconds - elapsedSeconds) % 60).toString().padStart(2, '0')}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
+
+                {/* Batch Image Generation Section - Only show when story is complete */}
+                {isStoryComplete && (
+                    <div className="mt-6 pt-6 border-t border-gray-700">
+                        <BatchImageGenerator story={currentStory} title={title} />
+                    </div>
+                )}
             </div>
-            
+
              {versions.length > 0 && (
                 <div className="space-y-4">
                     <h3 className="text-lg font-semibold text-white">Version History</h3>
