@@ -1,5 +1,3 @@
 [build]
-buildCommand = "cd server && npm ci"
-
-[deploy]
-startCommand = "cd server && node --max-old-space-size=4096 index.js"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
