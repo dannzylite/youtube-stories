@@ -15,15 +15,18 @@ const geminiClient = new GoogleGenAI({
 });
 
 // Initialize Google Cloud TTS client
-// Note: This requires service account credentials, not an API key
-const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS || './service-account-key.json';
+// Supports credentials from env var (for Railway/cloud) or local key file (for local dev)
+let ttsClientOptions;
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    console.log('[Init] Using service account credentials from GOOGLE_APPLICATION_CREDENTIALS_JSON env var');
+    ttsClientOptions = { credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) };
+} else {
+    const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS || './service-account-key.json';
+    console.log(`[Init] Using service account key file: ${keyFilename}`);
+    ttsClientOptions = { keyFilename };
+}
 
-console.log(`[Init] Using service account key file: ${keyFilename}`);
-
-// Initialize Google Cloud TTS client for fast generation
-const ttsClient = new textToSpeech.TextToSpeechClient({
-    keyFilename: keyFilename
-});
+const ttsClient = new textToSpeech.TextToSpeechClient(ttsClientOptions);
 
 // Middleware
 // Allow all origins for network testing - in production, restrict this
