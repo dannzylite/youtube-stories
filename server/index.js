@@ -147,7 +147,7 @@ app.post('/api/gemini/generate-speech-preview', async (req, res) => {
                 },
             };
 
-            console.log(`[Backend Speech Preview] Request:`, JSON.stringify(request, null, 2));
+            console.log(`[Backend Speech Preview] Request: text-to-speech for ${PREVIEW_TEXT.length} chars`);
             const [response] = await cloudTtsClient.synthesizeSpeech(request);
             console.log(`[Backend Speech Preview] Received ${response.audioContent.length} bytes of audio`);
             base64Audio = response.audioContent.toString('base64');
@@ -169,23 +169,19 @@ app.post('/api/gemini/generate-speech-preview', async (req, res) => {
                 },
             });
 
-            console.log('Response received:', JSON.stringify(response, null, 2));
+            console.log('Response received from Gemini TTS');
 
             base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
             if (!base64Audio) {
-                console.error('No audio data in response. Full response:', JSON.stringify(response, null, 2));
+                console.error('No audio data in response from Gemini TTS');
                 throw new Error(`Could not generate audio preview for voice "${voiceName}". This voice may not be supported by the Gemini TTS API.`);
             }
         }
 
         res.json({ audioData: base64Audio });
     } catch (error) {
-        console.error('Speech preview generation error:', error);
-        console.error('Error details:', error.message);
-        if (error.response) {
-            console.error('API Response:', JSON.stringify(error.response, null, 2));
-        }
+        console.error('Speech preview generation error:', error.message);
         res.status(500).json({
             error: error.message || 'Failed to generate speech preview'
         });
@@ -204,7 +200,6 @@ app.post('/api/gemini/generate-speech', async (req, res) => {
         }
 
         console.log(`[Backend Speech] Generating speech for ${text.length} characters with voice: ${voiceName}`);
-        console.log(`[Backend Speech] Text preview: ${text.substring(0, 100)}...`);
         console.log(`[Backend Speech] Speaking rate: ${speakingRate}x`);
 
         const model = "gemini-2.5-flash-preview-tts";
@@ -231,7 +226,7 @@ app.post('/api/gemini/generate-speech', async (req, res) => {
         const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
 
         if (!base64Audio) {
-            console.error('[Backend Speech] No audio data in response. Full response:', JSON.stringify(response, null, 2));
+            console.error('[Backend Speech] No audio data in response from Gemini');
             throw new Error('Could not generate audio from text.');
         }
 
@@ -239,11 +234,7 @@ app.post('/api/gemini/generate-speech', async (req, res) => {
 
         res.json({ audioData: base64Audio });
     } catch (error) {
-        console.error('[Backend Speech] Speech generation error:', error);
-        console.error('[Backend Speech] Error stack:', error.stack);
-        if (error.response) {
-            console.error('[Backend Speech] API Response:', JSON.stringify(error.response, null, 2));
-        }
+        console.error('[Backend Speech] Speech generation error:', error.message);
         res.status(500).json({
             error: error.message || 'Failed to generate speech'
         });
@@ -521,23 +512,16 @@ app.post('/api/tts/synthesize-long-audio', async (req, res) => {
         const totalTime = Math.floor((Date.now() - startTime) / 1000);
         console.log(`[Long Audio TTS] Complete! Total time: ${totalTime} seconds for ${text.length} characters`);
 
-        // Convert to base64 for response
+        // Stream JSON response to avoid OOM from JSON.stringify on large base64 audio data
         const base64Audio = concatenatedAudio.toString('base64');
-
-        res.json({
-            audioData: base64Audio,
-            message: 'Long audio synthesis completed successfully',
-            stats: {
-                characterCount: text.length,
-                chunkCount: audioChunks.length,
-                audioSizeBytes: concatenatedAudio.length,
-                processingTimeSeconds: totalTime
-            }
-        });
+        res.setHeader('Content-Type', 'application/json');
+        res.write('{"audioData":"');
+        res.write(base64Audio);
+        res.write(`","message":"Long audio synthesis completed successfully","stats":{"characterCount":${text.length},"chunkCount":${audioChunks.length},"audioSizeBytes":${concatenatedAudio.length},"processingTimeSeconds":${totalTime}}}`);
+        res.end();
 
     } catch (error) {
-        console.error('[Long Audio TTS] Error occurred:', error);
-        console.error('[Long Audio TTS] Error message:', error.message);
+        console.error('[Long Audio TTS] Error occurred:', error.message);
 
         res.status(500).json({
             error: error.message || 'Failed to synthesize long audio',
@@ -691,19 +675,21 @@ Return a JSON array of exactly ${numberOfImages} objects, each with:
             console.log(`[Batch Images] ${failedCount} image(s) failed and were skipped`);
         }
 
-        res.json({
-            images: generatedImages,
-            totalGenerated: successCount,
-            totalRequested: numberOfImages,
-            failedCount: failedCount,
-            message: failedCount > 0
-                ? `Generated ${successCount} of ${numberOfImages} images (${failedCount} failed and were skipped)`
-                : 'Batch image generation completed successfully'
-        });
+        // Stream JSON response to avoid OOM from JSON.stringify on large base64 image data
+        res.setHeader('Content-Type', 'application/json');
+        res.write('{"images":[');
+        for (let i = 0; i < generatedImages.length; i++) {
+            if (i > 0) res.write(',');
+            res.write(JSON.stringify(generatedImages[i]));
+        }
+        const message = failedCount > 0
+            ? `Generated ${successCount} of ${numberOfImages} images (${failedCount} failed and were skipped)`
+            : 'Batch image generation completed successfully';
+        res.write(`],"totalGenerated":${successCount},"totalRequested":${numberOfImages},"failedCount":${failedCount},"message":${JSON.stringify(message)}}`);
+        res.end();
 
     } catch (error) {
-        console.error('[Batch Images] Error:', error);
-        console.error('[Batch Images] Error message:', error.message);
+        console.error('[Batch Images] Error:', error.message);
         res.status(500).json({
             error: error.message || 'Failed to generate batch images',
             details: error.message
@@ -794,8 +780,7 @@ Return ONLY the final image generation prompt for Imagen, nothing else.`;
 
         res.json({ imageBytes: imageData });
     } catch (error) {
-        console.error('[Backend Thumbnail] Thumbnail refinement error:', error);
-        console.error('[Backend Thumbnail] Error details:', error.message);
+        console.error('[Backend Thumbnail] Refinement error:', error.message);
         res.status(500).json({
             error: error.message || 'Failed to refine thumbnail'
         });
